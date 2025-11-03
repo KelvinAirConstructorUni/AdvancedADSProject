@@ -16,6 +16,7 @@ def a_star_search(start, goal, edges, nodes):
 
     while frontier:
         _, current = heapq.heappop(frontier)
+
         if current == goal:
             break
 
