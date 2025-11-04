@@ -9,7 +9,7 @@ img = img.filter(ImageFilter.EDGE_ENHANCE_MORE)
 img = ImageOps.posterize(img, 6)  # 4–6 levels looks good
 
 # Step 3: boost contrast and color
-img = ImageEnhance.Contrast(img).enhance(1.5)
+img = ImageEnhance.Contrast(img).enhance(3.5)
 img = ImageEnhance.Color(img).enhance(0.7)
 
 # Step 4: optional blur smooth edges

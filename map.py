@@ -1,4 +1,8 @@
 import pygame
+import requests
+
+
+
 
 pygame.init()
 map_img = pygame.image.load("map.JPG")
@@ -7,6 +11,7 @@ pygame.display.set_caption("Click to get coordinates")
 
 info = pygame.display.Info()
 SCREEN_WIDTH, SCREEN_HEIGHT = info.current_w, info.current_h
+print(SCREEN_WIDTH, SCREEN_HEIGHT)
 
 pygame.display.set_caption("Intelligent Route Planner (Llama)")
 
