@@ -1,296 +1,274 @@
-# intelligent_route_planner_wifi_sim.py
-# Wi-Fi Fingerprinting SIM integrated with your Pygame campus app
-# Features:
-#  - Click building -> Enter indoor mode
-#  - Virtual APs + RSSI simulation (path-loss + noise)
-#  - Auto-generated fingerprint DB (grid)
-#  - kNN matching to estimate position
-#  - Click inside indoor map to set "real" (ground-truth) pos
-#  - Visualize true pos (green), estimated pos (magenta), APs, uncertainty circle
-#
-# NOTE: adjust resource filenames (map_cartooned.png, map_interior.png, llama gif) if needed.
-
-import pygame, math, random, requests, time
-from load_sprite import load_gif_frames
+import pygame, math, requests
+from helper_functions.load_sprite import load_gif_frames
 
 # -----------------------------
-# Config / Constants
+# Cursor Helper
 # -----------------------------
-GPS_SERVER_URL = "http://127.0.0.1:8000/get"  # still used for campus, optional
-MAP_FILE = "map_cartooned.png"                # campus map (keeps same size)
-INTERIOR_FILE = "irc_interior.png"            # interior floor plan (use a small PNG)
-LLAMA_GIF = "llama (2).gif"
-
-# Wi-Fi sim params
-TX_DBM = -30         # tx power at 1m
-PATH_LOSS_EXP = 2.2  # indoor path loss exponent (2-3 typical)
-RSSI_NOISE_SD = 2.5  # dBm noise
-KNN_K = 3            # number of neighbors for kNN
-
-# fingerprint grid spacing (pixels) inside interior map
-FINGERPRINT_SPACING = 40
-
-# Visuals
-AP_COLOR = (255, 200, 0)
-TRUE_COLOR = (0, 255, 100)
-EST_COLOR = (255, 0, 255)
-UNCERT_COLOR = (255, 255, 0)
+def set_cursor(state):
+    if state == "hand":
+        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_HAND)
+    elif state == "grab":
+        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_SIZEALL)
+    else:
+        pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
 
 # -----------------------------
-# Utilities: RSSI model + kNN
+# Constants
 # -----------------------------
-def rssi_from_distance_m(d_meters):
-    # d meters -> rssi dBm using log-distance path loss
-    if d_meters < 1.0:
-        d_meters = 1.0
-    mean = TX_DBM - 10 * PATH_LOSS_EXP * math.log10(d_meters)
-    return mean + random.gauss(0, RSSI_NOISE_SD)
-
-def pixel_dist(a, b):
-    return math.hypot(a[0]-b[0], a[1]-b[1])
-
-def compute_rssi_vector(pos_px, ap_list):
-    """Return dict {ap_id: rssi} for pos (pixels). ap_list entries: dict with 'pos',(x,y) and 'id'."""
-    vec = {}
-    for ap in ap_list:
-        dist_px = pixel_dist(pos_px, ap['pos'])
-        # we need approximate real-world meters -> assume interior scale (1 pixel ~ 0.05 m default)
-        # But we don't need true meters; distance ratio works. We'll treat 1 px = 0.05m (20 px = 1m).
-        px_to_m = 1.0 / 20.0
-        d_m = max(0.5, dist_px * px_to_m)
-        vec[ap['id']] = rssi_from_distance_m(d_m)
-    return vec
-
-def vector_distance(obs, ref):
-    """Euclidean distance between two RSSI dictionaries (missing keys handled)."""
-    keys = set(obs.keys()) | set(ref.keys())
-    s = 0.0
-    for k in keys:
-        o = obs.get(k, -100.0)
-        r = ref.get(k, -100.0)
-        s += (o - r) ** 2
-    return math.sqrt(s)
-
-def knn_locate(obs, fingerprint_db, k=KNN_K):
-    """Return weighted centroid location from top-k matches."""
-    dists = []
-    for entry in fingerprint_db:
-        d = vector_distance(obs, entry['rssi'])
-        dists.append((d, entry['pos']))
-    dists.sort(key=lambda x: x[0])
-    top = dists[:max(1, k)]
-    # weighted by 1/(dist+eps)
-    numx = numy = den = 0.0
-    for d, (x,y) in top:
-        w = 1.0 / (d + 1e-4)
-        numx += x * w; numy += y * w; den += w
-    if den == 0:
-        return None
-    return (numx/den, numy/den), (top[0][0] if top else 0.0)
+EARTH_RADIUS = 6378137
+BASE_LAT = 53.1665
+BASE_LON = 8.652
+SCREEN_TITLE = "Intelligent Route Planner (Llama)"
+GPS_SERVER_URL = "http://127.0.0.1:8000/get"
+scene = "campus"
 
 # -----------------------------
-# Build fingerprint DB for a given interior box
+# Coordinate Conversion
 # -----------------------------
-def build_fingerprint_db(map_w, map_h, ap_list, spacing=FINGERPRINT_SPACING):
-    db = []
-    # create grid points inside interior image
-    for y in range(spacing//2, map_h - spacing//2, spacing):
-        for x in range(spacing//2, map_w - spacing//2, spacing):
-            rssi = compute_rssi_vector((x,y), ap_list)
-            # optionally average multiple samples to simulate survey
-            db.append({"pos": (x,y), "rssi": rssi})
-    return db
+def latlon_to_meters(lat, lon):
+    x = EARTH_RADIUS * math.radians(lon)
+    y = EARTH_RADIUS * math.log(math.tan(math.pi / 4 + math.radians(lat) / 2))
+    return x, y
+
+BASE_X, BASE_Y = latlon_to_meters(BASE_LAT, BASE_LON)
+
+def gps_to_pixel(lat, lon, scale, width, height):
+    x_m, y_m = latlon_to_meters(lat, lon)
+    dx = (x_m - BASE_X) * scale
+    dy = (y_m - BASE_Y) * -scale
+    return int(width / 2 + dx), int(height / 2 + dy)
 
 # -----------------------------
-# Pygame / Scenes
+# Visual Helpers
+# -----------------------------
+def apply_map_tint(screen, color, mode="add"):
+    surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+    surf.fill(color)
+    flag = pygame.BLEND_RGBA_ADD if mode == "add" else pygame.BLEND_RGBA_MULT
+    screen.blit(surf, (0, 0), special_flags=flag)
+
+def dynamic_day_night_tint(screen, t):
+    morning, evening, night = (120, 0, 0), (120, 150, 40), (40, 80, 30)
+    cycle = (math.sin(t * 1e-13) + 1) / 2
+    if cycle < 0.5:
+        mix = cycle * 2
+        r = int(evening[0] * (1 - mix) + night[0] * mix)
+        g = int(evening[1] * (1 - mix) + night[1] * mix)
+        b = int(evening[2] * (1 - mix) + night[2] * mix)
+    else:
+        mix = (cycle - 0.5) * 2
+        r = int(night[0] * (1 - mix) + morning[0] * mix)
+        g = int(night[1] * (1 - mix) + morning[1] * mix)
+        b = int(night[2] * (1 - mix) + morning[2] * mix)
+    apply_map_tint(screen, (r, g, b, 60))
+
+def draw_trail(screen, trail):
+    for i, (x, y, a) in enumerate(trail):
+        t = i / len(trail) if len(trail) > 1 else 0
+        if t < 0.25:
+            r, g, b = 255, int(255 * (t / 0.25)), 0
+        elif t < 0.5:
+            r, g, b = int(255 * (1 - (t - 0.25) / 0.25)), 255, 0
+        elif t < 0.75:
+            r, g, b = 0, 255, int(255 * ((t - 0.5) / 0.25))
+        else:
+            r, g, b = 0, int(255 * (1 - (t - 0.75) / 0.25)), 255
+        pulse = 0.5 + 0.5 * math.sin(pygame.time.get_ticks() * 0.005 + i * 0.2)
+        fade = a * pulse
+        col = (int(r * fade), int(g * fade), int(b * fade))
+        pygame.draw.circle(screen, col, (int(x), int(y)), int(5 * fade) + 2)
+
+# -----------------------------
+# Init
 # -----------------------------
 pygame.init()
 clock = pygame.time.Clock()
+map_img = pygame.image.load("img/map_cartooned.png")
+frames = load_gif_frames("img/llama (2).gif", 50)
+W, H = map_img.get_width(), map_img.get_height()
+screen = pygame.display.set_mode((W - 30, H - 20))
+pygame.display.set_caption(SCREEN_TITLE)
 
-# load campus map - keep same size as before (user asked not to change)
-campus_img = pygame.image.load(MAP_FILE)
-W, H = campus_img.get_width(), campus_img.get_height()
-screen = pygame.display.set_mode((W + 20, H + 140))
-pygame.display.set_caption("Intelligent Route Planner (WiFi SIM)")
-
-# load an interior image for the building (if not found, we will use a blank surface)
-try:
-    interior_img = pygame.image.load(INTERIOR_FILE).convert_alpha()
-except Exception:
-    interior_img = pygame.Surface((600, 400))
-    interior_img.fill((30,30,40))
-    # simple placeholder layout
-    pygame.draw.rect(interior_img, (50,50,80), (20,20,560,360), 2)
-
-# llama frames
-frames = load_gif_frames(LLAMA_GIF, 40)
+# -----------------------------
+# States
+# -----------------------------
+time_wave = 0
 frame_idx = 0
+trail = []
+TRAIL_MAX = 250
+scale = 0.6
+pixel_mode = False
+latest_lat, latest_lon = BASE_LAT, BASE_LON
+smooth_lat, smooth_lon = latest_lat, latest_lon
+dragging_map = False
+follow_gps = True
+manual_offset = [0, 0]
+map_drag_start = (0, 0)
+map_orig_offset = (0, 0)
 
-# Buildings (same as your earlier structure)
-buildings = {
-    "IRC": {"pos": (318, 218), "radius": 45, "rooms": ["201–210", "301–310"], "interior": interior_img},
-    "RLH": {"pos": (235, 188), "radius": 45, "rooms": ["101–110", "201–220"], "interior": interior_img},
-    "C3 D-block": {"pos": (662, 508), "radius": 50, "rooms": ["401–410", "Lab 1–3"], "interior": interior_img},
-    "Main Gate": {"pos": (155, 224), "radius": 40, "rooms": ["Security", "Reception"], "interior": interior_img},
-}
+# Initial Bingo position (center map)
+bingo_pos = [W // 2, H // 2]
 
-# initial state
-scene = "campus"        # or "building"
-current_building = None
-hovered = None
-
-# Indoor simulation state (per-building)
-indoor = {
-    # will be filled: 'ap_list', 'fingerprint_db', 'map' (surface), 'w','h', 'true_pos', 'est_pos'
-}
-
-# auto-generate APs per interior when entering
-def gen_virtual_aps(map_w, map_h, n=4):
-    aps = []
-    for i in range(n):
-        x = random.randint(int(map_w*0.15), int(map_w*0.85))
-        y = random.randint(int(map_h*0.15), int(map_h*0.85))
-        aps.append({"id": f"AP{i+1}", "pos": (x,y)})
-    return aps
-
-# HUD helper
-font = pygame.font.SysFont("Menlo", 16)
-def draw_text(surf, text, x,y, c=(255,255,255)):
-    surf.blit(font.render(text, True, c), (x,y))
+# Path nodes + walking state
+path_nodes = []
+walking = False
+path_index = 0
+bingo_speed = 2.0
 
 # -----------------------------
 # Main Loop
 # -----------------------------
 running = True
 while running:
-    dt = clock.tick(30) / 1000.0
-    mx, my = pygame.mouse.get_pos()
-    hovered = None
+    clock.tick(24)
+    time_wave += 2
+    e = pygame.event.poll()
+    if e.type == pygame.QUIT or (e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE):
+        running = False
 
-    for ev in pygame.event.get():
-        if ev.type == pygame.QUIT:
-            running = False
-        elif ev.type == pygame.KEYDOWN:
-            if ev.key == pygame.K_ESCAPE:
-                running = False
-            elif ev.key == pygame.K_b:
-                # back to campus
-                scene = "campus"
-                current_building = None
-        elif ev.type == pygame.MOUSEBUTTONDOWN:
-            if scene == "campus":
-                # check building click
-                for name,b in buildings.items():
-                    bx,by = b['pos']
-                    if math.hypot(mx-bx, my-by) < b['radius']:
-                        # enter building
-                        scene = "building"
-                        current_building = name
-                        # prepare indoor sim state
-                        surf = b['interior']
-                        iw, ih = surf.get_width(), surf.get_height()
-                        aps = gen_virtual_aps(iw, ih, n=4)
-                        db = build_fingerprint_db(iw, ih, aps, spacing=FINGERPRINT_SPACING)
-                        indoor = {
-                            "map": surf,
-                            "w": iw, "h": ih,
-                            "ap_list": aps,
-                            "fingerprint_db": db,
-                            "true_pos": (iw//2, ih//2),
-                            "est_pos": (iw//2, ih//2),
-                            "last_obs": None
-                        }
-                        print(f"[SIM] Entered {name}: {len(aps)} APs, fingerprint samples={len(db)}")
-                        break
-            elif scene == "building":
-                # set true position inside interior (relative coordinates)
-                bx, by = buildings[current_building]['pos']  # not needed here
-                # transform click coordinates from global screen to interior local
-                # interior is drawn centered in the screen area below campus; we'll draw it at (20, H+20)
-                interior_x = mx - 20
-                interior_y = my - (H + 20)
-                if 0 <= interior_x < indoor['w'] and 0 <= interior_y < indoor['h']:
-                    indoor['true_pos'] = (int(interior_x), int(interior_y))
-                    print(f"[SIM] true_pos set -> {indoor['true_pos']}")
+    # --- Controls ---
+    if e.type == pygame.KEYDOWN:
+        if e.key == pygame.K_p and path_nodes:
+            walking = not walking
+            if walking:
+                path_index = 0
+                bingo_pos = list(path_nodes[0])  # ✅ start at first node
+                print(f"[PATH] Bingo starting at {bingo_pos}")
+            print(f"[PATH] Walking {'ON' if walking else 'OFF'}")
+        elif e.key == pygame.K_c:
+            follow_gps = True
+            manual_offset = [0, 0]
+        elif e.key in (pygame.K_PLUS, pygame.K_EQUALS):
+            scale *= 1.1
+        elif e.key in (pygame.K_MINUS, pygame.K_UNDERSCORE):
+            scale /= 1.1
+        elif e.key == pygame.K_z:
+            pixel_mode = not pixel_mode
+        elif e.key == pygame.K_s and path_nodes:
+            with open("path_nodes.txt", "w") as f:
+                for x, y in path_nodes:
+                    f.write(f"{x},{y}\n")
+            print("[INFO] Saved path_nodes.txt")
 
-    # --- Rendering ---
-    screen.fill((18,18,20))
+    # --- Dragging ---
+    if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+        dragging_map = True
+        map_drag_start = pygame.mouse.get_pos()
+        map_orig_offset = tuple(manual_offset)
+        follow_gps = False
+    elif e.type == pygame.MOUSEBUTTONUP and e.button == 1:
+        dragging_map = False
+    elif e.type == pygame.MOUSEMOTION and dragging_map:
+        mx, my = pygame.mouse.get_pos()
+        dx, dy = mx - map_drag_start[0], my - map_drag_start[1]
+        manual_offset = [map_orig_offset[0] + dx, map_orig_offset[1] + dy]
 
-    if scene == "campus":
-        # draw campus map at top-left (preserves original size)
-        screen.blit(campus_img, (10,10))
+    # --- Add or Remove Path Points (glued to map) ---
+    if e.type == pygame.MOUSEBUTTONDOWN:
+        if e.button == 1:  # left-click to add node
+            mx, my = pygame.mouse.get_pos()
+            map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
+            path_nodes.append((int(map_x), int(map_y)))
+            print(f"[NODE] Added glued point ({int(map_x)}, {int(map_y)})")
+        elif e.button == 3 and path_nodes:
+            removed = path_nodes.pop()
+            print(f"[NODE] Removed {removed}")
 
-        # buildings
-        for name,b in buildings.items():
-            bx,by = b['pos']
-            pygame.draw.circle(screen, (0,200,170), (bx,by), 6)
-            pygame.draw.circle(screen, (0,200,170), (bx,by), b['radius'], 1)
-            # hover detection
-            if math.hypot(mx-bx, my-by) < b['radius']:
-                hovered = name
-                pygame.draw.circle(screen, (0,255,255), (bx,by), b['radius']+6, 2)
-                # popup quick text
-                draw_text(screen, f"Click to enter {name}", bx+12, by-6, (255,255,255))
+    # --- GPS Update (optional) ---
+    try:
+        res = requests.get(GPS_SERVER_URL, timeout=1)
+        data = res.json()
+        lat, lon = data.get("lat"), data.get("lon")
+        if lat and lon:
+            latest_lat, latest_lon = float(lat), float(lon)
+    except Exception:
+        pass
 
-        # draw llama centered on campus (just decorative)
-        screen.blit(frames[frame_idx % len(frames)], (W//2 - 20, H//2 - 20))
+    smooth_lat = 0.9 * smooth_lat + 0.1 * latest_lat
+    smooth_lon = 0.9 * smooth_lon + 0.1 * latest_lon
+    target_x, target_y = gps_to_pixel(smooth_lat, smooth_lon, scale, W, H)
 
-        draw_text(screen, "Campus view - click a building to enter (B to return)", 10, H+20)
+    if follow_gps:
+        offset_x = W / 2 - target_x
+        offset_y = H / 2 - target_y
+        manual_offset = [offset_x, offset_y]
+    else:
+        offset_x, offset_y = manual_offset
 
-    elif scene == "building":
-        # draw the interior map in the bottom portion of window (placed at x=20,y=H+20)
-        ix, iy = 20, H + 20
-        screen.fill((20,20,30), (ix-2, iy-2, indoor['w']+4, indoor['h']+4))
-        screen.blit(indoor['map'], (ix, iy))
+    # --- Path Walking ---
+    if walking and path_index < len(path_nodes) - 1:
+        tx, ty = path_nodes[path_index + 1]
+        dx, dy = tx - bingo_pos[0], ty - bingo_pos[1]
+        dist = math.hypot(dx, dy)
+        if dist < bingo_speed:
+            path_index += 1
+        else:
+            bingo_pos[0] += (dx / dist) * bingo_speed
+            bingo_pos[1] += (dy / dist) * bingo_speed
+    elif walking and path_index >= len(path_nodes) - 1:
+        walking = False
+        print("[PATH] Arrived at destination.")
 
-        # draw APs (local coordinates -> screen coords)
-        for ap in indoor['ap_list']:
-            ax, ay = ap['pos']
-            sx, sy = ix + ax, iy + ay
-            pygame.draw.circle(screen, AP_COLOR, (sx, sy), 6)
-            draw_text(screen, ap['id'], sx+8, sy-6, (220,200,0))
+    # --- Draw Map ---
+    map_to_draw = map_img
+    if pixel_mode:
+        small = pygame.transform.scale(map_img, (W // 6, H // 6))
+        map_to_draw = pygame.transform.scale(small, (W, H))
+    screen.blit(map_to_draw, (offset_x, offset_y))
+    dynamic_day_night_tint(screen, time_wave)
 
-        # compute observed RSSI vector at the true_pos (simulated measurement)
-        true_px = indoor['true_pos']
-        # convert to screen coords for drawing
-        true_screen = (ix + true_px[0], iy + true_px[1])
-        observed = compute_rssi_vector(true_px, indoor['ap_list'])
-        indoor['last_obs'] = observed
+    # --- Draw Path (glued) ---
+    for i, (x, y) in enumerate(path_nodes):
+        pygame.draw.circle(screen, (0, 255, 0), (int(x + offset_x), int(y + offset_y)), 5)
+        if i > 0:
+            px, py = path_nodes[i - 1]
+            pygame.draw.line(screen, (255, 255, 0),
+                             (int(px + offset_x), int(py + offset_y)),
+                             (int(x + offset_x), int(y + offset_y)), 2)
 
-        # kNN estimate based on fingerprint_db
-        est, best_dist = knn_locate(observed, indoor['fingerprint_db'], k=KNN_K)
-        if est is not None:
-            indoor['est_pos'] = est
+    # --- Start & End markers ---
+    if path_nodes:
+        sx, sy = path_nodes[0]
+        ex, ey = path_nodes[-1]
+        pygame.draw.circle(screen, (0, 255, 0), (int(sx + offset_x), int(sy + offset_y)), 10, 3)
+        pygame.draw.circle(screen, (255, 0, 0), (int(ex + offset_x), int(ey + offset_y)), 10, 3)
 
-        est_screen = (ix + int(indoor['est_pos'][0]), iy + int(indoor['est_pos'][1]))
+    # --- Draw Bingo + Radar ---
+    bx, by = bingo_pos[0] + offset_x, bingo_pos[1] + offset_y
+    if not trail or math.hypot(trail[-1][0] - bx, trail[-1][1] - by) > 2:
+        trail.append((bx, by, 1.0))
+        if len(trail) > TRAIL_MAX:
+            trail.pop(0)
+    for i in range(len(trail)):
+        x, y, a = trail[i]
+        trail[i] = (x, y, max(0, a - 0.01))
+    draw_trail(screen, trail)
 
-        # Draw true pos (green) and estimated pos (magenta)
-        pygame.draw.circle(screen, TRUE_COLOR, true_screen, 6)
-        pygame.draw.circle(screen, EST_COLOR, est_screen, 6)
-        # uncertainty circle (radius ~ proportional to best_dist)
-        unc_px = int(max(8, min(150, best_dist * 8 if best_dist else 12)))
-        s = pygame.Surface((unc_px*2, unc_px*2), pygame.SRCALPHA)
-        pygame.draw.circle(s, (255,255,0,45), (unc_px, unc_px), unc_px)
-        screen.blit(s, (est_screen[0]-unc_px, est_screen[1]-unc_px))
+    # Radar (above tint)
+    for i in range(3):
+        radius = 40 + i * 25 + (time_wave % 50)
+        alpha = max(0, 180 - (radius - 40) * 3)
+        radar_surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+        pygame.draw.circle(radar_surf, (0, 255, 200, alpha), (int(bx), int(by)), radius, 2)
+        screen.blit(radar_surf, (0, 0))
 
-        # draw fingerprint sample points faintly
-        for entry in indoor['fingerprint_db']:
-            ex, ey = entry['pos']
-            screen.set_at((ix+ex, iy+ey), (30,30,40))
+    # Draw Bingo sprite LAST
+    if frames:
+        frame = frames[frame_idx % len(frames)].copy()
+        frame.set_alpha(255)
+        screen.blit(frame, (bx - 20, by - 20))
 
-        # display RSSI values for each AP near it
-        y0 = iy + indoor['h'] + 6
-        draw_text(screen, f"Building: {current_building}  (click interior to set true pos)  |  Press B to go back", 10, y0)
-        y0 += 20
-        for ap in indoor['ap_list']:
-            r = observed.get(ap['id'], -100.0)
-            draw_text(screen, f"{ap['id']}: {r:.1f} dBm", 10, y0)
-            y0 += 18
+    # --- Debug Overlay ---
+    font_dbg = pygame.font.SysFont("Menlo", 15)
+    dbg_lines = [
+        f"Offset: ({int(offset_x)}, {int(offset_y)})",
+        f"Bingo map: ({int(bingo_pos[0])}, {int(bingo_pos[1])})",
+        f"Nodes: {len(path_nodes)} | Index: {path_index + 1 if path_nodes else 0}",
+    ]
+    for i, line in enumerate(dbg_lines):
+        screen.blit(font_dbg.render(line, True, (255, 255, 255)), (8, 8 + i * 18))
 
-        # small legend
-        draw_text(screen, "Green = true pos (click inside). Magenta = kNN estimate. Yellow = uncertainty.", 10, y0+6)
-
-    # flip / frame
+    set_cursor("grab" if dragging_map else "arrow")
     pygame.display.flip()
     frame_idx += 1
 
