@@ -271,9 +271,9 @@ while running:
             # Determine which entrance based on last route key
             floor_entry = last_route if 'last_route' in locals() else "front"
             if floor_entry == "front":
-                floor_spawn = (300, 480)   # near bottom of map
+                floor_spawn = (300, 480)  # near bottom of map
             else:
-                floor_spawn = (300, 120)   # near top of map
+                floor_spawn = (300, 120)  # near top of map
             floor_bingo_pos = list(floor_spawn)
             print(f"[RLH] Bingo entered via {floor_entry} entrance.")
 
