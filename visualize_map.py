@@ -15,13 +15,6 @@ def set_cursor(state):
 
 
 def set_room_node(coordinates: tuple, label="", color=(255, 80, 80), radius=10):
-    """
-    Draws an upgraded room marker:
-    - Pulsing glow
-    - Solid inner dot
-    - Text label above
-    - Auto-adjusts for campus/floor scene offsets
-    """
     global scene, time_wave, manual_offset
 
     if not isinstance(coordinates, tuple) or len(coordinates) != 2:
@@ -39,9 +32,9 @@ def set_room_node(coordinates: tuple, label="", color=(255, 80, 80), radius=10):
     # -----------------------------
     # 1. Blinking Pulse (sin wave)
     # -----------------------------
-    pulse = (math.sin(time_wave * 0.15) + 1) / 2       # 0 → 1
-    glow_radius = int(radius + 8 + pulse * 6)          # expanding glow
-    glow_alpha = int(80 + pulse * 100)                 # glow brightness
+    pulse = (math.sin(time_wave * 0.15) + 1) / 2  # 0 → 1
+    glow_radius = int(radius + 8 + pulse * 6)  # expanding glow
+    glow_alpha = int(80 + pulse * 100)  # glow brightness
 
     # Glow layer
     glow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
