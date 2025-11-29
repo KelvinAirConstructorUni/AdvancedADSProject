@@ -11,7 +11,6 @@ SCREEN_TITLE = "Intelligent Route Planner (Llama)"
 GPS_SERVER_URL = "http://127.0.0.1:8000/get"
 scene = "campus"
 
-
 pygame.init()
 clock = pygame.time.Clock()
 map_img = pygame.image.load("img/map_cartooned.png")
@@ -19,7 +18,6 @@ W, H = map_img.get_width(), map_img.get_height()
 screen = pygame.display.set_mode((W - 30, H - 20))
 pygame.display.set_caption(SCREEN_TITLE)
 frames = load_gif_frames("img/llama (2).gif", 50)
-
 
 screen_w, screen_h = screen.get_size()
 center_x = screen_w // 2
@@ -68,7 +66,6 @@ rooms = {
 # -----------------------------
 
 
-
 graph_nodes = {
     # hallway intersection nodes
     "H1": (center_x - 10, center_y + 10),
@@ -94,8 +91,6 @@ graph_edges = {
 }
 
 selected_room = None
-
-
 
 
 def heuristic(a, b):
@@ -267,7 +262,6 @@ def draw_radar(screen, center, t):
         screen.blit(s, (0, 0))
 
 
-
 # -----------------------------
 # Routes for RLH (Front/Back)
 # -----------------------------
@@ -305,8 +299,7 @@ map_orig_offset = (0, 0)
 path_points = []
 path_editor = False
 last_route = "front"
-last_path = []   # <- store the most recent A* path for RLH
-
+last_path = []  # <- store the most recent A* path for RLH
 
 # -----------------------------
 # Main Loop
