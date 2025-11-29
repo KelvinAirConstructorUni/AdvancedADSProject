@@ -83,11 +83,6 @@ rooms = {
 # RLH Graph for A* Pathfinding
 # -----------------------------
 
-
-# -----------------------------
-# RLH Graph for A* Pathfinding
-# -----------------------------
-
 graph_nodes = {
     # ---- horizontal hallway (left → right, y ≈ 350) ----
     "H_L1": (76, 349),
