@@ -1,102 +1,6 @@
 import pygame, math, requests
 from helper_functions.load_sprite import load_gif_frames
 
-# -----------------------------
-# Init
-# -----------------------------
-EARTH_RADIUS = 6378137
-BASE_LAT = 53.1670
-BASE_LON = 8.65222
-SCREEN_TITLE = "Intelligent Route Planner (Llama)"
-GPS_SERVER_URL = "http://127.0.0.1:8000/get"
-scene = "campus"
-
-
-pygame.init()
-clock = pygame.time.Clock()
-map_img = pygame.image.load("img/map_cartooned.png")
-W, H = map_img.get_width(), map_img.get_height()
-screen = pygame.display.set_mode((W - 30, H - 20))
-pygame.display.set_caption(SCREEN_TITLE)
-frames = load_gif_frames("img/llama (2).gif", 50)
-
-
-screen_w, screen_h = screen.get_size()
-center_x = screen_w // 2
-center_y = screen_h // 2
-# -----------------------------
-# Constants
-# -----------------------------
-
-# RLH outline polygon (from path editor)
-RLH_POLYGON = [
-    (198, 138), (196, 161), (190, 179), (190, 202), (208, 207),
-    (210, 190), (224, 193), (229, 181), (253, 185), (251, 209),
-    (270, 215), (279, 150), (260, 147), (256, 168),
-    (215, 163), (216, 141), (200, 138)
-]
-
-# -----------------------------
-# Buildings (Clickable)
-# -----------------------------
-buildings = {
-    "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor.png"}
-
-}
-
-passages = [
-    (436, 356),
-    (575, 352),
-    (642, 354),
-    (642, 473),
-    (643, 563),
-    (643, 616),
-    (643, 315),
-    (644, 215),
-    (643, 177),
-]
-
-rooms = {
-    "CNL Hall": {"pos": [(642, 151)]},
-    "Room 134": {"pos": [(680, 615)]},
-    "Room 135": {"pos": [(671, 563)]},
-    "passages": {"pos": passages}
-}
-
-# -----------------------------
-# RLH Graph for A* Pathfinding
-# -----------------------------
-
-
-
-graph_nodes = {
-    # hallway intersection nodes
-    "H1": (center_x - 10, center_y + 10),
-    "H2": (620, 420),
-    "H3": (650, 500),
-
-    # connect rooms to hallway nodes
-    "CNL Hall": rooms["CNL Hall"]["pos"][0],
-    "Room 134": rooms["Room 134"]["pos"][0],
-    "Room 135": rooms["Room 135"]["pos"][0],
-    "passages": rooms["passages"]["pos"][0]
-}
-
-# Edges (bidirectional, weighted by Euclidean distance)
-graph_edges = {
-    "H1": ["H2"],
-    "H2": ["H1", "H3", "CNL Hall"],
-    "H3": ["H2", "Room 134", "Room 135"],
-    "CNL Hall": ["H2"],
-    "Room 134": ["H3"],
-    "Room 135": ["H3"],
-
-}
-
-selected_room = None
-
-
-
 
 def heuristic(a, b):
     return math.dist(a, b)
@@ -149,14 +53,11 @@ def set_cursor(state):
         pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
 
 
-def to_screen(x, y):
-    return int(x * scale_floor + pos_x), int(y * scale_floor + pos_y)
-
-
 def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
     """
     Draws a room node with glow and optional label.
     `coordinates` can be a single tuple (x, y) or a list of tuples [(x, y), ...].
+    Coordinates are assumed to already be in SCREEN space.
     """
     global scene, time_wave, manual_offset
 
@@ -174,7 +75,7 @@ def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
 
         x, y = coord
 
-        # Apply offset
+        # Apply offset only in campus scene
         if scene == "campus":
             x = int(x + manual_offset[0])
             y = int(y + manual_offset[1])
@@ -211,6 +112,81 @@ def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
 
             # Text
             screen.blit(text_surf, (x - text_surf.get_width() // 2, y - 25))
+
+
+# -----------------------------
+# Constants
+# -----------------------------
+EARTH_RADIUS = 6378137
+BASE_LAT = 53.1670
+BASE_LON = 8.65222
+SCREEN_TITLE = "Intelligent Route Planner (Llama)"
+GPS_SERVER_URL = "http://127.0.0.1:8000/get"
+scene = "campus"
+
+# RLH outline polygon (from path editor)
+RLH_POLYGON = [
+    (198, 138), (196, 161), (190, 179), (190, 202), (208, 207),
+    (210, 190), (224, 193), (229, 181), (253, 185), (251, 209),
+    (270, 215), (279, 150), (260, 147), (256, 168),
+    (215, 163), (216, 141), (200, 138)
+]
+
+# -----------------------------
+# Buildings (Clickable)
+# -----------------------------
+buildings = {
+    "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor.png"}
+}
+
+# Hallway / passage nodes (raw map coords on floor plan)
+passages = [
+    (436, 356),
+    (575, 352),
+    (642, 354),
+    (642, 473),
+    (643, 563),
+    (643, 616),
+    (643, 315),
+    (644, 215),
+    (643, 177),
+]
+
+rooms = {
+    "CNL Hall": {"pos": [(642, 151)]},
+    "Room 134": {"pos": [(680, 615)]},
+    "Room 135": {"pos": [(671, 563)]},
+    "passages": {"pos": passages}  # not a room, just storing the list
+}
+
+# -----------------------------
+# RLH Graph for A* Pathfinding
+# -----------------------------
+graph_nodes = {
+    # hallway intersection nodes
+    "H1": (600, 350),
+    "H2": (620, 420),
+    "H3": (650, 500),
+
+    # connect rooms to hallway nodes
+    "CNL Hall": rooms["CNL Hall"]["pos"][0],
+    "Room 134": rooms["Room 134"]["pos"][0],
+    "Room 135": rooms["Room 135"]["pos"][0],
+    # you could add more if you want: e.g. each passage as its own node
+}
+
+# Edges (bidirectional, weighted by Euclidean distance)
+graph_edges = {
+    "H1": ["H2"],
+    "H2": ["H1", "H3", "CNL Hall"],
+    "H3": ["H2", "Room 134", "Room 135"],
+    "CNL Hall": ["H2"],
+    "Room 134": ["H3"],
+    "Room 135": ["H3"],
+}
+
+selected_room = None  # which room was clicked
+last_path = []  # last A* path found (list of node names)
 
 
 # -----------------------------
@@ -267,6 +243,16 @@ def draw_radar(screen, center, t):
         screen.blit(s, (0, 0))
 
 
+# -----------------------------
+# Init
+# -----------------------------
+pygame.init()
+clock = pygame.time.Clock()
+map_img = pygame.image.load("img/map_cartooned.png")
+W, H = map_img.get_width(), map_img.get_height()
+screen = pygame.display.set_mode((W - 30, H - 20))
+pygame.display.set_caption(SCREEN_TITLE)
+frames = load_gif_frames("img/llama (2).gif", 50)
 
 # -----------------------------
 # Routes for RLH (Front/Back)
@@ -305,8 +291,6 @@ map_orig_offset = (0, 0)
 path_points = []
 path_editor = False
 last_route = "front"
-last_path = []   # <- store the most recent A* path for RLH
-
 
 # -----------------------------
 # Main Loop
@@ -384,6 +368,7 @@ while running:
 
         # Building click detection
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and not path_editor:
+            mx, my = pygame.mouse.get_pos()
             map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
             for name, b in buildings.items():
                 bx, by = b["pos"]
@@ -411,7 +396,6 @@ while running:
         bingo_x, bingo_y = target_x + offset_x, target_y + offset_y
 
         # Draw campus map
-        # Draw campus map
         map_to_draw = map_img
         if pixel_mode:
             small = pygame.transform.scale(map_img, (W // 6, H // 6))
@@ -419,9 +403,7 @@ while running:
         screen.blit(map_to_draw, (offset_x, offset_y))
         dynamic_day_night_tint(screen, time_wave)
 
-        # -----------------------------
-        # RLH Hover Highlight (Breathing Polygon Glow)
-        # -----------------------------
+        # RLH Hover Highlight
         mx, my = pygame.mouse.get_pos()
         map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
         hover_distance = min(math.hypot(map_x - x, map_y - y) for x, y in RLH_POLYGON)
@@ -433,7 +415,6 @@ while running:
             glow_intensity = int(160 + 80 * pulse * proximity_factor)
             glow_color = (0, glow_intensity, 255)
 
-            # Apply "breathing" scale to polygon
             cx = sum(x for x, _ in RLH_POLYGON) / len(RLH_POLYGON)
             cy = sum(y for _, y in RLH_POLYGON) / len(RLH_POLYGON)
             scaled_poly = [
@@ -444,27 +425,23 @@ while running:
                 for x, y in RLH_POLYGON
             ]
 
-            # Filled transparent glow
             poly_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
             pygame.draw.polygon(poly_surface, (*glow_color, int(90 * proximity_factor)), scaled_poly)
             screen.blit(poly_surface, (0, 0))
 
-            # Outline border
             pygame.draw.polygon(screen, glow_color, scaled_poly, 3)
 
-            # Floating label
             font = pygame.font.SysFont("PressStart2P", 10)
             text = font.render("RLH BUILDING", True, (0, 255, 255))
             screen.blit(text, (map_x + 10, map_y - 25))
 
-            # Click interaction
             if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
                 print("[INFO] Clicked inside RLH polygon.")
                 scene = "rlh_floor"
                 rlh_floor_img = pygame.image.load(buildings["RLH"]["image"])
                 print("[SCENE] Switched to RLH Ground Floor view.")
 
-        # Path visualization
+        # Path visualization (campus routes)
         if path_points:
             for i, (x, y) in enumerate(path_points):
                 sx, sy = int(x + offset_x), int(y + offset_y)
@@ -480,90 +457,96 @@ while running:
         set_cursor("grab" if (dragging_map or path_editor) else "arrow")
 
     # -----------------------------
-    # RLH Floor Plan Scene (Fit-to-Screen + Fixed Bingo)
-    # -----------------------------
-    # -----------------------------
-    # RLH Floor Plan Scene
+    # RLH Floor Plan Scene (Fit-to-Screen + A* Path)
     # -----------------------------
     elif scene == "rlh_floor":
         win_w, win_h = screen.get_size()
         orig_w, orig_h = rlh_floor_img.get_size()
         scale_floor = max(win_w / orig_w, win_h / orig_h)
+
         scaled_floor = pygame.transform.smoothscale(
             rlh_floor_img, (int(orig_w * scale_floor), int(orig_h * scale_floor))
         )
         pos_x = (win_w - scaled_floor.get_width()) // 2
         pos_y = (win_h - scaled_floor.get_height()) // 2
 
-        mx, my = pygame.mouse.get_pos()
-
-        # 1) draw floor first
+        # 1) Draw floor background
         screen.fill((245, 245, 245))
         screen.blit(scaled_floor, (pos_x, pos_y))
 
-        # 2) handle clicks on rooms (coords are already in “final” space)
+        mx, my = pygame.mouse.get_pos()
+
+        # 2) Handle click on rooms (scaled hitboxes)
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
-            print(mx, my)
             for room_name, data in rooms.items():
                 if room_name == "passages":
                     continue
-                rx, ry = data["pos"][0]  # you measured these by clicking already
-                radius = 10
+
+                rx_raw, ry_raw = data["pos"][0]
+                rx = int(rx_raw * scale_floor + pos_x)
+                ry = int(ry_raw * scale_floor + pos_y)
+                radius = 12
 
                 if math.hypot(mx - rx, my - ry) <= radius:
                     selected_room = room_name
                     print(f"[ROOM] Selected: {room_name}")
 
-                    # A* from entrance node H1 to this room
+                    # A* from H1 to the selected room
                     start_node = "H1"
                     goal_node = room_name
-                    path_nodes = a_star(start_node, goal_node)
-                    print("[A* path]", path_nodes)
+                    last_path = a_star(start_node, goal_node)
+                    print("[PATH]", last_path)
 
-                    # store once, draw every frame
-                    if path_nodes:
-                        last_path = path_nodes
-                    else:
-                        last_path = []
-                        print("[ERROR] No route found.")
-
-        # 3) draw passages (your green hallway dots)
-        for px, py in passages:
-            pygame.draw.circle(screen, (0, 150, 200), (int(px), int(py)), 5)
-
-        # 4) draw room nodes (labels + glow)
-        for room_name, data in rooms.items():
-            if room_name == "passages":
-                continue
-
-            rx, ry = data["pos"][0]
-            if room_name == selected_room:
-                set_room_node((rx, ry), label=room_name,
-                              color=(255, 230, 50), radius=10)
-            else:
-                set_room_node((rx, ry), label=room_name,
-                              color=(0, 200, 130), radius=7)
-
-        # 5) draw the A* path using stored last_path
+        # 3) Draw A* path (if exists), scaled to screen
         if last_path:
             for i in range(len(last_path) - 1):
                 p1 = graph_nodes[last_path[i]]
                 p2 = graph_nodes[last_path[i + 1]]
 
-                # graph_nodes already in the same coordinate space as your nodes
-                x1, y1 = int(p1[0]), int(p1[1])
-                x2, y2 = int(p2[0]), int(p2[1])
+                x1 = int(p1[0] * scale_floor + pos_x)
+                y1 = int(p1[1] * scale_floor + pos_y)
+                x2 = int(p2[0] * scale_floor + pos_x)
+                y2 = int(p2[1] * scale_floor + pos_y)
 
-                pygame.draw.line(screen, (255, 240, 0), (x1, y1), (x2, y2), 4)
-                pygame.draw.circle(screen, (255, 200, 0), (x1, y1), 6)
-                pygame.draw.circle(screen, (255, 200, 0), (x2, y2), 6)
+                pygame.draw.line(screen, (255, 240, 0), (x1, y1), (x2, y2), 6)
 
-        # 6) draw Bingo (you can set this to H1 or your own coords)
-        draw_radar(screen, (center_x + 15, center_y - 12), time_wave)
-        screen.blit(frames[frame_idx % len(frames)],
-                    (center_x - 20, center_y - 12))
+        # 3) passages
+        for px_raw, py_raw in passages:
+            px = int(px_raw * scale_floor + pos_x)
+            py = int(py_raw * scale_floor + pos_y)
+            pygame.draw.circle(screen, (0, 150, 200), (px, py), 5)
 
-        # 7) UI
+
+        # 4) room nodes (ONLY DRAW ONCE PER ROOM)
+        for room_name, data in rooms.items():
+            if room_name == "passages":
+                continue  # skip passages, they use small blue dots
+
+            pos = pygame.mouse.get_pos()
+            print(pos)
+
+            rx_raw, ry_raw = data["pos"][0]
+            rx = int(rx_raw )
+            ry = int(ry_raw )
+
+            # highlight selected room
+            if room_name == selected_room:
+                set_room_node((rx, ry), label=room_name, color=(255, 230, 50), radius=10)
+            else:
+                set_room_node((rx, ry), label=room_name, color=(0, 200, 130), radius=7)
+
+        # 6) Draw Bingo radar (center or back door)
+        if last_route == "front":
+            bx, by = win_w // 2, win_h // 2
+            draw_radar(screen, (bx, by), time_wave)
+            screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 20))
+
+        elif last_route == "back":
+            bx, by = 645, 348  # these are screen coords already
+            draw_radar(screen, (bx, by), time_wave)
+            screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 20))
+
+        # 7) UI text
         font = pygame.font.SysFont("PressStart2P", 12)
         screen.blit(font.render("← BACK TO CAMPUS (ESC)", True, (0, 0, 0)), (20, 20))
         screen.blit(font.render(f"RLH Scale Fit: {scale_floor:.2f}", True, (80, 80, 80)), (20, 45))

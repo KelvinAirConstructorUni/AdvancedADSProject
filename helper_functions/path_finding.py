@@ -1,37 +1,40 @@
-import heapq
 import math
+from visualize_map import graph_nodes, graph_edges
 
-def heuristic(a, b, nodes):
-    """Euclidean distance heuristic."""
-    (x1, y1) = nodes[a]
-    (x2, y2) = nodes[b]
-    return math.hypot(x2 - x1, y2 - y1)
 
-def a_star_search(start, goal, nodes, edges):
-    """Finds the shortest path between start and goal."""
-    frontier = []
-    heapq.heappush(frontier, (0, start))
-    came_from = {start: None}
-    cost_so_far = {start: 0}
+def heuristic(a, b):
+    return math.dist(a, b)
 
-    while frontier:
-        _, current = heapq.heappop(frontier)
+def a_star(start, goal):
+    open_set = {start}
+    came_from = {}
+
+    g = {node: float("inf") for node in graph_nodes}
+    f = {node: float("inf") for node in graph_nodes}
+
+    g[start] = 0
+    f[start] = heuristic(graph_nodes[start], graph_nodes[goal])
+
+    while open_set:
+        current = min(open_set, key=lambda x: f[x])
+
         if current == goal:
-            break
+            # reconstruct path
+            path = [current]
+            while current in came_from:
+                current = came_from[current]
+                path.append(current)
+            path.reverse()
+            return path
 
-        for neighbor in edges[current]:
-            new_cost = cost_so_far[current] + heuristic(current, neighbor, nodes)
-            if neighbor not in cost_so_far or new_cost < cost_so_far[neighbor]:
-                cost_so_far[neighbor] = new_cost
-                priority = new_cost + heuristic(neighbor, goal, nodes)
-                heapq.heappush(frontier, (priority, neighbor))
+        open_set.remove(current)
+
+        for neighbor in graph_edges[current]:
+            tentative_g = g[current] + math.dist(graph_nodes[current], graph_nodes[neighbor])
+            if tentative_g < g[neighbor]:
                 came_from[neighbor] = current
+                g[neighbor] = tentative_g
+                f[neighbor] = tentative_g + heuristic(graph_nodes[neighbor], graph_nodes[goal])
+                open_set.add(neighbor)
 
-    # Reconstruct path
-    path = []
-    current = goal
-    while current is not None:
-        path.append(current)
-        current = came_from.get(current)
-    path.reverse()
-    return path
+    return None
