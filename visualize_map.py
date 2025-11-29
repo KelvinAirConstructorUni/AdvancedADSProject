@@ -22,6 +22,7 @@ frames = load_gif_frames("img/llama (2).gif", 50)
 screen_w, screen_h = screen.get_size()
 center_x = screen_w // 2
 center_y = screen_h // 2
+
 # -----------------------------
 # Constants
 # -----------------------------
@@ -39,7 +40,6 @@ RLH_POLYGON = [
 # -----------------------------
 buildings = {
     "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor.png"}
-
 }
 
 passages = [
@@ -80,31 +80,70 @@ rooms = {
 # -----------------------------
 
 
+# -----------------------------
+# RLH Graph for A* Pathfinding
+# -----------------------------
+
 graph_nodes = {
-    "H1": (600, 350),
-    "P1": (575, 352),
-    "P2": (642, 354),
-    "P3": (643, 315),
-    "P4": (644, 215),
-    "P5": (643, 177),
+    # ---- horizontal hallway (left → right, y ≈ 350) ----
+    "H_L1": (76, 349),
+    "H_L2": (175, 353),
+    "H_L3": (253, 353),
+    "H1": (436, 356),  # 👈 central node near Bingo (start)
+    "H_R1": (575, 352),
+    "H_R2": (642, 354),  # also used as intersection with right vertical
+
+    # ---- left vertical hallway (top → bottom, x ≈ 65) ----
+    "VL1": (65, 116),
+    "VL2": (68, 260),
+    "VL3": (66, 415),
+    "VL4": (69, 523),
+    "VL5": (65, 640),
+
+    # ---- right vertical hallway (top → bottom, x ≈ 643) ----
+    "VR1": (643, 177),
+    "VR2": (644, 215),
+    "VR3": (643, 315),
+    "VR4": (642, 473),
+    "VR5": (643, 563),
+    "VR6": (643, 616),
+
+    # ---- rooms (destinations) ----
     "CNL Hall": rooms["CNL Hall"]["pos"][0],
     "Room 134": rooms["Room 134"]["pos"][0],
     "Room 135": rooms["Room 135"]["pos"][0],
 }
 
 # Edges (bidirectional, weighted by Euclidean distance)
+# Edges (bidirectional). All movement is along hallways.
 graph_edges = {
-    "H1": ["P1"],
-    "P1": ["H1", "P2"],
-    "P2": ["P1", "P3"],
-    "P3": ["P2", "P4"],
-    "P4": ["P3", "P5"],
-    "P5": ["P4", "CNL Hall"],
+    # horizontal hallway
+    "H_L1": ["H_L2", "VL3"],  # left intersection (approx)
+    "H_L2": ["H_L1", "H_L3"],
+    "H_L3": ["H_L2", "H1"],
+    "H1": ["H_L3", "H_R1"],  # 👈 Bingo's hallway node
+    "H_R1": ["H1", "H_R2"],
+    "H_R2": ["H_R1", "VR3", "VR4"],  # intersection with right vertical
 
-    "CNL Hall": ["P5"],
+    # left vertical hallway
+    "VL1": ["VL2"],
+    "VL2": ["VL1", "VL3"],
+    "VL3": ["VL2", "VL4", "H_L1"],  # connect to horizontal
+    "VL4": ["VL3", "VL5"],
+    "VL5": ["VL4"],
 
-    "Room 134": ["P4"],
-    "Room 135": ["P4"],
+    # right vertical hallway
+    "VR1": ["VR2", "CNL Hall"],  # top, near CNL
+    "VR2": ["VR1", "VR3"],
+    "VR3": ["VR2", "H_R2"],  # middle intersection
+    "VR4": ["H_R2", "VR5"],
+    "VR5": ["VR4", "VR6", "Room 135"],
+    "VR6": ["VR5", "Room 134"],
+
+    # rooms back to hallway
+    "CNL Hall": ["VR1"],
+    "Room 134": ["VR6"],
+    "Room 135": ["VR5"],
 }
 
 selected_room = None
