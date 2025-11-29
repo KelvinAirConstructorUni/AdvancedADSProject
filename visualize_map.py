@@ -69,9 +69,12 @@ rooms = {
     "Room 135": {"pos": [(671, 563)]},
     "passages": {"pos": passages},
     "exits": {"pos": [(127, 282)]},
-    "exits1": {"pos": [(127, 282)]}, "exits2": {"pos": [(120, 527)]},
-    "exits3": {"pos": [(588, 522)]}, "exits4": {"pos": [(695, 353)]},
-    "exits5": {"pos": [(684, 101)]}, "exits6": {"pos": [(599, 98)]},
+    "exits1": {"pos": [(127, 282)]},
+    "exits2": {"pos": [(120, 527)]},
+    "exits3": {"pos": [(588, 522)]},
+    "exits4": {"pos": [(695, 353)]},
+    "exits5": {"pos": [(684, 101)]},
+    "exits6": {"pos": [(599, 98)]},
     "exits7": {"pos": [(66, 92)]},
     "exits8": {"pos": [(358, 381)]},
 }
@@ -113,6 +116,15 @@ graph_nodes = {
     "CNL Hall": rooms["CNL Hall"]["pos"][0],
     "Room 134": rooms["Room 134"]["pos"][0],
     "Room 135": rooms["Room 135"]["pos"][0],
+    "exits": rooms["exits"]["pos"][0],
+    "exits1": rooms["exits1"]["pos"][0],
+    "exits2": rooms["exits2"]["pos"][0],
+    "exits3": rooms["exits3"]["pos"][0],
+    "exits4": rooms["exits4"]["pos"][0],
+    "exits5": rooms["exits5"]["pos"][0],
+    "exits6": rooms["exits6"]["pos"][0],
+    "exits7": rooms["exits7"]["pos"][0],
+    "exits8": rooms["exits8"]["pos"][0],
 }
 
 # Edges (bidirectional, weighted by Euclidean distance)
