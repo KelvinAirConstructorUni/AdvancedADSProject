@@ -52,13 +52,26 @@ passages = [
     (643, 315),
     (644, 215),
     (643, 177),
+    (76, 349),
+    (65, 116),
+    (68, 260),
+    (66, 415),
+    (69, 523),
+    (65, 640),
+    (175, 353),
+    (253, 353),
 ]
 
 rooms = {
     "CNL Hall": {"pos": [(642, 151)]},
     "Room 134": {"pos": [(680, 615)]},
     "Room 135": {"pos": [(671, 563)]},
-    "passages": {"pos": passages}
+    "passages": {"pos": passages},
+    "exits": {"pos": [(127, 282)]},
+    "exits1": {"pos": [(127, 282)]}, "exits2": {"pos": [(120, 527)]},
+    "exits3": {"pos": [(588, 522)]}, "exits4": {"pos": [(695, 353)]},
+    "exits5": {"pos": [(684, 101)]}, "exits6": {"pos": [(599, 98)]},
+    "exits7": {"pos": [(66, 92)]},
 }
 
 # -----------------------------
@@ -67,27 +80,30 @@ rooms = {
 
 
 graph_nodes = {
-    # hallway intersection nodes
-    "H1": (center_x - 10, center_y + 10),
-    "H2": (620, 420),
-    "H3": (650, 500),
-
-    # connect rooms to hallway nodes
+    "H1": (600, 350),
+    "P1": (575, 352),
+    "P2": (642, 354),
+    "P3": (643, 315),
+    "P4": (644, 215),
+    "P5": (643, 177),
     "CNL Hall": rooms["CNL Hall"]["pos"][0],
     "Room 134": rooms["Room 134"]["pos"][0],
     "Room 135": rooms["Room 135"]["pos"][0],
-    "passages": rooms["passages"]["pos"][0]
 }
 
 # Edges (bidirectional, weighted by Euclidean distance)
 graph_edges = {
-    "H1": ["H2"],
-    "H2": ["H1", "H3", "CNL Hall"],
-    "H3": ["H2", "Room 134", "Room 135"],
-    "CNL Hall": ["H2"],
-    "Room 134": ["H3"],
-    "Room 135": ["H3"],
+    "H1": ["P1"],
+    "P1": ["H1", "P2"],
+    "P2": ["P1", "P3"],
+    "P3": ["P2", "P4"],
+    "P4": ["P3", "P5"],
+    "P5": ["P4", "CNL Hall"],
 
+    "CNL Hall": ["P5"],
+
+    "Room 134": ["P4"],
+    "Room 135": ["P4"],
 }
 
 selected_room = None
