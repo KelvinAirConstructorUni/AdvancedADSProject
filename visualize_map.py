@@ -14,22 +14,95 @@ def set_cursor(state):
         pygame.mouse.set_cursor(pygame.SYSTEM_CURSOR_ARROW)
 
 
+def set_room_node(coordinates: tuple, label="", color=(255, 80, 80), radius=10):
+    """
+    Draws an upgraded room marker:
+    - Pulsing glow
+    - Solid inner dot
+    - Text label above
+    - Auto-adjusts for campus/floor scene offsets
+    """
+    global scene, time_wave, manual_offset
+
+    if not isinstance(coordinates, tuple) or len(coordinates) != 2:
+        return
+
+    x, y = coordinates
+
+    # Apply correct coordinate system
+    if scene == "campus":
+        x = int(x + manual_offset[0])
+        y = int(y + manual_offset[1])
+    else:
+        x, y = int(x), int(y)
+
+    # -----------------------------
+    # 1. Blinking Pulse (sin wave)
+    # -----------------------------
+    pulse = (math.sin(time_wave * 0.15) + 1) / 2       # 0 → 1
+    glow_radius = int(radius + 8 + pulse * 6)          # expanding glow
+    glow_alpha = int(80 + pulse * 100)                 # glow brightness
+
+    # Glow layer
+    glow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
+    pygame.draw.circle(glow_surface, (color[0], color[1], color[2], glow_alpha),
+                       (x, y), glow_radius)
+    screen.blit(glow_surface, (0, 0))
+
+    # -----------------------------
+    # 2. Solid dot
+    # -----------------------------
+    pygame.draw.circle(screen, color, (x, y), radius)
+
+    # -----------------------------
+    # 3. Label (text above the node)
+    # -----------------------------
+    if label:
+        font = pygame.font.Font(None, 26)
+        text_surf = font.render(label, True, (255, 255, 255))
+        outline_surf = font.render(label, True, (0, 0, 0))
+
+        # Outline for readability
+        screen.blit(outline_surf, (x - outline_surf.get_width() // 2 + 1, y - 25 + 1))
+        screen.blit(outline_surf, (x - outline_surf.get_width() // 2 - 1, y - 25 - 1))
+
+        # Text
+        screen.blit(text_surf, (x - text_surf.get_width() // 2, y - 25))
+
+
 # -----------------------------
 # Constants
 # -----------------------------
 EARTH_RADIUS = 6378137
-BASE_LAT = 53.1665
-BASE_LON = 8.652
+BASE_LAT = 53.1670
+BASE_LON = 8.65222
 SCREEN_TITLE = "Intelligent Route Planner (Llama)"
 GPS_SERVER_URL = "http://127.0.0.1:8000/get"
 scene = "campus"
 
+# RLH outline polygon (from path editor)
+RLH_POLYGON = [
+    (198, 138), (196, 161), (190, 179), (190, 202), (208, 207),
+    (210, 190), (224, 193), (229, 181), (253, 185), (251, 209),
+    (270, 215), (279, 150), (260, 147), (256, 168),
+    (215, 163), (216, 141), (200, 138)
+]
+
 # -----------------------------
-# Building Areas (for clicking)
+# Buildings (Clickable)
 # -----------------------------
 buildings = {
     "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor.png"}
+
 }
+
+rooms = {
+    "CNL Hall": {"pos": (642, 151)},
+    "Room 134": {"pos": (680, 615)},
+    "Room 135": {"pos": (671, 563)},
+}
+
+selected_room = None
 
 
 # -----------------------------
@@ -52,7 +125,7 @@ def gps_to_pixel(lat, lon, scale, width, height):
 
 
 # -----------------------------
-# Visuals
+# Visual Helpers
 # -----------------------------
 def apply_map_tint(screen, color, mode="add"):
     surf = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
@@ -98,7 +171,7 @@ pygame.display.set_caption(SCREEN_TITLE)
 frames = load_gif_frames("img/llama (2).gif", 50)
 
 # -----------------------------
-# Predefined Navigation Routes
+# Routes for RLH (Front/Back)
 # -----------------------------
 routes = {
     "RLH": {
@@ -116,7 +189,7 @@ routes = {
 }
 
 # -----------------------------
-# States
+# State Variables
 # -----------------------------
 time_wave = 0
 frame_idx = 0
@@ -133,6 +206,7 @@ map_drag_start = (0, 0)
 map_orig_offset = (0, 0)
 path_points = []
 path_editor = False
+last_route = "front"
 
 # -----------------------------
 # Main Loop
@@ -156,26 +230,35 @@ while running:
         if e.type == pygame.KEYDOWN:
             if e.key == pygame.K_z:
                 pixel_mode = not pixel_mode
+
             elif e.key in (pygame.K_PLUS, pygame.K_EQUALS):
                 scale *= 1.1
+
             elif e.key in (pygame.K_MINUS, pygame.K_UNDERSCORE):
                 scale /= 1.1
+
             elif e.key == pygame.K_b:
                 path_points = routes["RLH"]["back"]
+                last_route = "back"
                 print("[ROUTE] RLH back route loaded.")
+
             elif e.key == pygame.K_f:
                 path_points = routes["RLH"]["front"]
+                last_route = "front"
                 print("[ROUTE] RLH front route loaded.")
+
             elif e.key == pygame.K_n:
                 path_editor = not path_editor
                 print(f"[MODE] Path Editor {'ON' if path_editor else 'OFF'}")
+
             elif e.key == pygame.K_s and path_editor:
                 with open("path_nodes.txt", "w") as f:
                     for x, y in path_points:
                         f.write(f"{x},{y}\n")
+
                 print("[INFO] Saved path_nodes.txt")
 
-        # dragging map
+        # Mouse drag for map
         if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and not path_editor:
             dragging_map = True
             map_drag_start = pygame.mouse.get_pos()
@@ -188,18 +271,30 @@ while running:
             dx, dy = mx - map_drag_start[0], my - map_drag_start[1]
             manual_offset = [map_orig_offset[0] + dx, map_orig_offset[1] + dy]
 
-        # path editor mouse
+        # Path Editor Mode
         if e.type == pygame.MOUSEBUTTONDOWN and path_editor:
+            mx, my = pygame.mouse.get_pos()
+            map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
             if e.button == 1:
-                mx, my = pygame.mouse.get_pos()
-                map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
                 path_points.append((map_x, map_y))
-                print(f"[NODE] Added MAP ({int(map_x)},{int(map_y)})")
+                print(f"[NODE] Added MAP ({int(map_x)}, {int(map_y)}) [screen=({mx},{my}) offset={manual_offset}]")
             elif e.button == 3 and path_points:
                 removed = path_points.pop()
                 print(f"[NODE] Removed {removed}")
 
-        # gps
+        # Building click detection
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and not path_editor:
+            map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
+            for name, b in buildings.items():
+                bx, by = b["pos"]
+                if math.hypot(map_x - bx, map_y - by) < b["radius"]:
+                    print(f"[INFO] Clicked on {name}")
+                    if name == "RLH":
+                        scene = "rlh_floor"
+                        rlh_floor_img = pygame.image.load(b["image"])
+                        print("[SCENE] Switched to RLH Ground Floor view.")
+
+        # GPS simulation
         try:
             res = requests.get(GPS_SERVER_URL, timeout=1)
             data = res.json()
@@ -213,24 +308,10 @@ while running:
         smooth_lon = 0.9 * smooth_lon + 0.1 * latest_lon
         target_x, target_y = gps_to_pixel(smooth_lat, smooth_lon, scale, W, H)
         offset_x, offset_y = manual_offset
-        bingo_x = target_x + offset_x
-        bingo_y = target_y + offset_y
+        bingo_x, bingo_y = target_x + offset_x, target_y + offset_y
 
-        # --- Building click detection ---
-        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1 and not path_editor:
-            mx, my = pygame.mouse.get_pos()
-            map_x = mx - offset_x
-            map_y = my - offset_y
-            for name, b in buildings.items():
-                bx, by = b["pos"]
-                if math.hypot(map_x - bx, map_y - by) < b["radius"]:
-                    print(f"[INFO] Clicked on {name} building.")
-                    if name == "RLH":
-                        scene = "rlh_floor"
-                        rlh_floor_img = pygame.image.load(b["image"])
-                        print("[SCENE] Switched to RLH Ground Floor view.")
-
-        # draw map
+        # Draw campus map
+        # Draw campus map
         map_to_draw = map_img
         if pixel_mode:
             small = pygame.transform.scale(map_img, (W // 6, H // 6))
@@ -238,86 +319,118 @@ while running:
         screen.blit(map_to_draw, (offset_x, offset_y))
         dynamic_day_night_tint(screen, time_wave)
 
-        # draw route
-        for i, (x, y) in enumerate(path_points):
-            sx, sy = int(x + offset_x), int(y + offset_y)
-            pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 6)
-            if i > 0:
-                px, py = path_points[i - 1]
-                pygame.draw.line(screen, (255, 255, 0),
-                                 (int(px + offset_x), int(py + offset_y)), (sx, sy), 2)
+        # -----------------------------
+        # RLH Hover Highlight (Breathing Polygon Glow)
+        # -----------------------------
+        mx, my = pygame.mouse.get_pos()
+        map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
+        hover_distance = min(math.hypot(map_x - x, map_y - y) for x, y in RLH_POLYGON)
 
-        # radar + bingo
+        if hover_distance < 80:  # hover range
+            proximity_factor = max(0.1, 1 - hover_distance / 80)
+            pulse = abs(math.sin(pygame.time.get_ticks() * 0.004))
+            breathe = 1 + 0.04 * math.sin(pygame.time.get_ticks() * 0.003)
+            glow_intensity = int(160 + 80 * pulse * proximity_factor)
+            glow_color = (0, glow_intensity, 255)
+
+            # Apply "breathing" scale to polygon
+            cx = sum(x for x, _ in RLH_POLYGON) / len(RLH_POLYGON)
+            cy = sum(y for _, y in RLH_POLYGON) / len(RLH_POLYGON)
+            scaled_poly = [
+                (
+                    (x - cx) * breathe + cx + manual_offset[0],
+                    (y - cy) * breathe + cy + manual_offset[1],
+                )
+                for x, y in RLH_POLYGON
+            ]
+
+            # Filled transparent glow
+            poly_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
+            pygame.draw.polygon(poly_surface, (*glow_color, int(90 * proximity_factor)), scaled_poly)
+            screen.blit(poly_surface, (0, 0))
+
+            # Outline border
+            pygame.draw.polygon(screen, glow_color, scaled_poly, 3)
+
+            # Floating label
+            font = pygame.font.SysFont("PressStart2P", 10)
+            text = font.render("RLH BUILDING", True, (0, 255, 255))
+            screen.blit(text, (map_x + 10, map_y - 25))
+
+            # Click interaction
+            if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+                print("[INFO] Clicked inside RLH polygon.")
+                scene = "rlh_floor"
+                rlh_floor_img = pygame.image.load(buildings["RLH"]["image"])
+                print("[SCENE] Switched to RLH Ground Floor view.")
+
+        # Path visualization
+        if path_points:
+            for i, (x, y) in enumerate(path_points):
+                sx, sy = int(x + offset_x), int(y + offset_y)
+                pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 6)
+                if i > 0:
+                    px, py = path_points[i - 1]
+                    pygame.draw.line(screen, (255, 255, 0),
+                                     (int(px + offset_x), int(py + offset_y)), (sx, sy), 2)
+
+        # Bingo + radar
         draw_radar(screen, (int(bingo_x), int(bingo_y)), time_wave)
         screen.blit(frames[frame_idx % len(frames)], (bingo_x - 20, bingo_y - 20))
         set_cursor("grab" if (dragging_map or path_editor) else "arrow")
 
     # -----------------------------
-    # RLH Ground Floor Scene
-    # -----------------------------
-    # -----------------------------
-    # RLH Ground Floor Scene (Zoomable)
-    # -----------------------------
-    # -----------------------------
-    # RLH Ground Floor Scene (Zoomable + Bingo)
-    # -----------------------------
-    # -----------------------------
-    # RLH Ground Floor Scene (Zoomable + Auto-Entrance + Bingo)
+    # RLH Floor Plan Scene (Fit-to-Screen + Fixed Bingo)
     # -----------------------------
     elif scene == "rlh_floor":
-        # static zoom + spawn tracking
-        if "scale_floor" not in locals():
-            scale_floor = 1.0
-            # Determine which entrance based on last route key
-            floor_entry = last_route if 'last_route' in locals() else "front"
-            if floor_entry == "front":
-                floor_spawn = (300, 480)  # near bottom of map
-            else:
-                floor_spawn = (300, 120)  # near top of map
-            floor_bingo_pos = list(floor_spawn)
-            print(f"[RLH] Bingo entered via {floor_entry} entrance.")
-
-        # Zoom control
-        if e.type == pygame.KEYDOWN:
-            if e.key in (pygame.K_PLUS, pygame.K_EQUALS):
-                scale_floor *= 1.1
-            elif e.key in (pygame.K_MINUS, pygame.K_UNDERSCORE):
-                scale_floor /= 1.1
-            elif e.key == pygame.K_b:
-                path_points = routes["RLH"]["back"]
-                last_route = "back"
-                print("[ROUTE] RLH back route loaded.")
-            elif e.key == pygame.K_f:
-                path_points = routes["RLH"]["front"]
-                last_route = "front"
-                print("[ROUTE] RLH front route loaded.")
-
-            scale_floor = max(0.29, min(3.0, scale_floor))
-        if e.type == pygame.KEYDOWN and e.key == pygame.K_ESCAPE:
-            scene = "campus"
-            print("[SCENE] Returned to campus map.")
-
-        # Prepare zoomed image
+        win_w, win_h = screen.get_size()
         orig_w, orig_h = rlh_floor_img.get_size()
-        new_w, new_h = int(orig_w * scale_floor), int(orig_h * scale_floor)
-        scaled_floor = pygame.transform.smoothscale(rlh_floor_img, (new_w, new_h))
+        scale_floor = max(win_w / orig_w, win_h / orig_h)
+        scaled_floor = pygame.transform.smoothscale(
+            rlh_floor_img, (int(orig_w * scale_floor), int(orig_h * scale_floor))
+        )
+        pos_x = (win_w - scaled_floor.get_width()) // 2
+        pos_y = (win_h - scaled_floor.get_height()) // 2
 
-        screen.fill((245, 245, 245))  # whitesmoke background
-        pos_x = (screen.get_width() - new_w) // 2
-        pos_y = (screen.get_height() - new_h) // 2
+        # Room click detection
+        if e.type == pygame.MOUSEBUTTONDOWN and e.button == 1:
+            mx, my = pygame.mouse.get_pos()
+
+            for room_name, data in rooms.items():
+                rx, ry = data["pos"]
+                radius = 12  # slightly bigger hitbox for easier clicking
+
+                # Simple circle collision
+                if math.hypot(mx - rx, my - ry) <= radius:
+                    selected_room = room_name
+                    print(f"[ROOM] Selected: {room_name}")
+
+        for room_name, data in rooms.items():
+            if room_name == selected_room:
+                # highlight selected node (big glow & different color)
+                set_room_node(data["pos"], label=room_name, color=(255, 230, 50), radius=10)
+            else:
+                set_room_node(data["pos"], label=room_name, color=(0, 200, 130), radius=7)
+
+        screen.fill((245, 245, 245))
         screen.blit(scaled_floor, (pos_x, pos_y))
 
-        # Draw Bingo inside the hall
-        bx = int(pos_x + floor_bingo_pos[0] * scale_floor)
-        by = int(pos_y + floor_bingo_pos[1] * scale_floor)
-        draw_radar(screen, (bx, by), time_wave)
-        screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 20))
+        if last_route == "front":
+            bx, by = win_w // 2, win_h // 2
+            draw_radar(screen, (bx, by), time_wave)
+            screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 20))
 
-        # HUD
+        elif last_route == "back":
+            bx, by = 645, 348
+            draw_radar(screen, (bx, by), time_wave)
+            screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 20))
+
         font = pygame.font.SysFont("PressStart2P", 12)
         screen.blit(font.render("← BACK TO CAMPUS (ESC)", True, (0, 0, 0)), (20, 20))
-        screen.blit(font.render(f"Zoom: {scale_floor:.2f}x (+/-)", True, (60, 60, 60)), (20, 45))
-        screen.blit(font.render(f"Bingo entered from: {floor_entry.upper()}", True, (0, 100, 200)), (20, 70))
+        screen.blit(font.render(f"RLH Scale Fit: {scale_floor:.2f}", True, (80, 80, 80)), (20, 45))
+
+        for name, data in rooms.items():
+            set_room_node(data["pos"], color=(0, 200, 130), radius=7)
 
     pygame.display.flip()
     frame_idx += 1
