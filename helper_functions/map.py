@@ -2,8 +2,6 @@ import pygame
 import requests
 
 
-
-
 pygame.init()
 map_img = pygame.image.load("../img/map.JPG")
 screen = pygame.display.set_mode(map_img.get_size())
