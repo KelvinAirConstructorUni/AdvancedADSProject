@@ -11,7 +11,20 @@ SCREEN_TITLE = "Intelligent Route Planner (Llama)"
 GPS_SERVER_URL = "http://127.0.0.1:8000/get"
 scene = "campus"
 
+checkpoint_images = {}
+
+def load_checkpoint_images():
+    import os
+    folder = "img/checkpoints"
+    for fname in os.listdir(folder):
+        if fname.lower().endswith(('.png', '.jpg', '.jpeg')):
+            key = fname.split('.')[0]  # H1.jpg -> H1
+            checkpoint_images[key] = pygame.image.load(os.path.join(folder, fname))
+
+
 pygame.init()
+load_checkpoint_images()
+
 clock = pygame.time.Clock()
 map_img = pygame.image.load("img/map.JPG")
 W, H = map_img.get_width(), map_img.get_height()
@@ -22,6 +35,12 @@ frames = load_gif_frames("img/llama (2).gif", 50)
 screen_w, screen_h = screen.get_size()
 center_x = screen_w // 2
 center_y = screen_h // 2
+
+
+checkpoint_popup = None
+checkpoint_timer = 0
+checkpoint_duration = 60  # frames (2.5 seconds at 24fps)
+
 
 # -----------------------------
 # Constants
@@ -156,7 +175,6 @@ graph_edges = {
 
 selected_room = None
 
-
 def heuristic(a, b):
     return math.dist(a, b)
 
@@ -211,6 +229,7 @@ def set_cursor(state):
 def to_screen(x, y):
     return int(x * scale_floor + pos_x), int(y * scale_floor + pos_y)
 
+
 def move_bingo_along_path():
     global bingo_index, bingo_moving, bingo_pos
 
@@ -226,10 +245,18 @@ def move_bingo_along_path():
     dy = ty - by
     dist = math.hypot(dx, dy)
 
+    global checkpoint_popup
+    global checkpoint_timer
+
     if dist < bingo_speed:
         # snap to node
         bingo_pos = [tx, ty]
         bingo_index += 1
+        # Show checkpoint if available
+        node_key = bingo_path[bingo_index]
+        if node_key in checkpoint_images:
+            checkpoint_popup = checkpoint_images[node_key]
+            checkpoint_timer = checkpoint_duration
 
         if bingo_index >= len(bingo_path) - 1:
             bingo_moving = False
@@ -398,8 +425,7 @@ bingo_moving = False
 bingo_path = []
 bingo_index = 0
 bingo_pos = [center_x, center_y]  # x, y
-bingo_speed = 3     # pixels per frame (tune this)
-
+bingo_speed = 3  # pixels per frame (tune this)
 
 # -----------------------------
 # Main Loop
@@ -668,6 +694,23 @@ while running:
         bx, by = int(bingo_pos[0]), int(bingo_pos[1])
         draw_radar(screen, (bx, by), time_wave)
         screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 30))
+
+        # Checkpoint popup display
+        if checkpoint_timer > 0 and checkpoint_popup:
+            popup = pygame.transform.scale(checkpoint_popup, (300, 200))
+
+            # bottom-left or bottom-center position
+            px = 20
+            py = screen_h - 220
+
+            # popup frame
+            bg = pygame.Surface((320, 220), pygame.SRCALPHA)
+            pygame.draw.rect(bg, (0, 0, 0, 180), (0, 0, 320, 220), border_radius=12)
+            screen.blit(bg, (px - 10, py - 10))
+
+            screen.blit(popup, (px, py))
+
+            checkpoint_timer -= 1
 
         # 7) UI
         font = pygame.font.SysFont("PressStart2P", 12)
