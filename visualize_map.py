@@ -13,7 +13,7 @@ scene = "campus"
 
 pygame.init()
 clock = pygame.time.Clock()
-map_img = pygame.image.load("img/map_cartooned.png")
+map_img = pygame.image.load("img/map.JPG")
 W, H = map_img.get_width(), map_img.get_height()
 screen = pygame.display.set_mode((W - 30, H - 20))
 pygame.display.set_caption(SCREEN_TITLE)
@@ -39,7 +39,7 @@ RLH_POLYGON = [
 # Buildings (Clickable)
 # -----------------------------
 buildings = {
-    "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor.png"}
+    "RLH": {"pos": (235, 188), "radius": 60, "image": "img/rlh_groundfloor1.jpeg"}
 }
 
 passages = [
