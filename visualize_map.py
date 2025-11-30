@@ -13,6 +13,7 @@ scene = "campus"
 
 checkpoint_images = {}
 
+
 def load_checkpoint_images():
     import os
     folder = "img/checkpoints"
@@ -36,11 +37,9 @@ screen_w, screen_h = screen.get_size()
 center_x = screen_w // 2
 center_y = screen_h // 2
 
-
 checkpoint_popup = None
 checkpoint_timer = 0
 checkpoint_duration = 60  # frames (2.5 seconds at 24fps)
-
 
 # -----------------------------
 # Constants
@@ -174,6 +173,7 @@ graph_edges = {
 }
 
 selected_room = None
+
 
 def heuristic(a, b):
     return math.dist(a, b)
