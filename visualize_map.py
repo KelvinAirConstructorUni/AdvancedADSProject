@@ -211,6 +211,34 @@ def set_cursor(state):
 def to_screen(x, y):
     return int(x * scale_floor + pos_x), int(y * scale_floor + pos_y)
 
+def move_bingo_along_path():
+    global bingo_index, bingo_moving, bingo_pos
+
+    if not bingo_moving or len(bingo_path) < 2:
+        return
+
+    # current goal node
+    target_node = bingo_path[bingo_index + 1]
+    tx, ty = graph_nodes[target_node]
+
+    bx, by = bingo_pos
+    dx = tx - bx
+    dy = ty - by
+    dist = math.hypot(dx, dy)
+
+    if dist < bingo_speed:
+        # snap to node
+        bingo_pos = [tx, ty]
+        bingo_index += 1
+
+        if bingo_index >= len(bingo_path) - 1:
+            bingo_moving = False
+        return
+
+    # move smoothly
+    bingo_pos[0] += bingo_speed * dx / dist
+    bingo_pos[1] += bingo_speed * dy / dist
+
 
 def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
     """
@@ -364,6 +392,14 @@ path_points = []
 path_editor = False
 last_route = "front"
 last_path = []  # <- store the most recent A* path for RLH
+
+# For Bingo movement along A* path
+bingo_moving = False
+bingo_path = []
+bingo_index = 0
+bingo_pos = [center_x, center_y]  # x, y
+bingo_speed = 3     # pixels per frame (tune this)
+
 
 # -----------------------------
 # Main Loop
@@ -580,6 +616,14 @@ while running:
                     # store once, draw every frame
                     if path_nodes:
                         last_path = path_nodes
+                        # Start bingo movement
+                        bingo_path = path_nodes
+                        bingo_index = 0
+                        bingo_moving = True
+
+                        # Set initial position to first node
+                        start_x, start_y = graph_nodes[bingo_path[0]]
+                        bingo_pos = [start_x, start_y]
                     else:
                         last_path = []
                         print("[ERROR] No route found.")
@@ -616,9 +660,14 @@ while running:
                 pygame.draw.circle(screen, (255, 200, 0), (x2, y2), 6)
 
         # 6) draw Bingo (you can set this to H1 or your own coords)
-        draw_radar(screen, (center_x + 15, center_y - 12), time_wave)
-        screen.blit(frames[frame_idx % len(frames)],
-                    (center_x - 20, center_y - 12))
+
+        # MOVE BINGO IF PATH EXISTS
+        move_bingo_along_path()
+
+        # Draw animated Bingo
+        bx, by = int(bingo_pos[0]), int(bingo_pos[1])
+        draw_radar(screen, (bx, by), time_wave)
+        screen.blit(frames[frame_idx % len(frames)], (bx - 20, by - 30))
 
         # 7) UI
         font = pygame.font.SysFont("PressStart2P", 12)
