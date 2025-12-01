@@ -1,0 +1,81 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Campus GPS Viewer</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <style>
+    html, body, #map { height: 100%; margin: 0; }
+    .status {
+      position: absolute; top: 10px; left: 10px; z-index: 1000;
+      background: rgba(0,0,0,0.65); color: #fff; padding: 6px 10px; border-radius: 6px;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, Arial, sans-serif; font-size: 14px;
+    }
+    .controls { position: absolute; top: 10px; right: 10px; z-index: 1000; }
+    .btn { background: #1976d2; color:#fff; border:none; padding:6px 10px; border-radius:6px; cursor:pointer; }
+    .btn:disabled { background: #555; cursor: default; }
+  </style>
+  <!-- If you serve this over HTTP on a LAN, some mobile browsers may limit geolocation in this page. -->
+  <!-- Use the phone sender page at project root (index.html) to push GPS to the server. -->
+  <!-- This viewer only reads from /api/gps and displays it. -->
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https: 'unsafe-inline' 'unsafe-eval' data:; connect-src *; img-src * data: blob:;" />
+</head>
+<body>
+  <div id="map"></div>
+  <div class="status" id="status">Waiting for GPS…</div>
+  <div class="controls">
+    <button class="btn" id="recenterBtn">Recenter</button>
+  </div>
+  <script>
+    // Default center near campus (adjust as needed)
+    const DEFAULT_CENTER = [53.1669, 8.6523];
+    const DEFAULT_ZOOM = 16;
+    const API_URL = '/api/gps';
+
+    const map = L.map('map').setView(DEFAULT_CENTER, DEFAULT_ZOOM);
+    L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      maxZoom: 20,
+      attribution: '&copy; OpenStreetMap contributors'
+    }).addTo(map);
+
+    const marker = L.marker(DEFAULT_CENTER).addTo(map);
+    const accuracyCircle = L.circle(DEFAULT_CENTER, {radius: 5, color: '#1976d2', fillColor:'#1976d2', fillOpacity:0.15}).addTo(map);
+
+    const statusEl = document.getElementById('status');
+    const recenterBtn = document.getElementById('recenterBtn');
+    let lastLatLon = null;
+
+    async function refresh() {
+      try {
+        const res = await fetch(API_URL, { cache: 'no-store' });
+        if (!res.ok) throw new Error('HTTP ' + res.status);
+        const data = await res.json();
+        const lat = Number(data.lat);
+        const lon = Number(data.lon);
+
+        if (Number.isFinite(lat) && Number.isFinite(lon) && (lat !== 0 || lon !== 0)) {
+          statusEl.textContent = `lat=${lat.toFixed(6)}, lon=${lon.toFixed(6)}`;
+          marker.setLatLng([lat, lon]);
+          accuracyCircle.setLatLng([lat, lon]);
+          lastLatLon = [lat, lon];
+        } else {
+          statusEl.textContent = 'Waiting for GPS…';
+        }
+      } catch (e) {
+        statusEl.textContent = 'GPS fetch error: ' + e.message;
+      }
+    }
+
+    recenterBtn.addEventListener('click', () => {
+      const target = lastLatLon || DEFAULT_CENTER;
+      map.setView(target, DEFAULT_ZOOM);
+    });
+
+    // Poll periodically
+    refresh();
+    setInterval(refresh, 1500);
+  </script>
+</body>
+</html>

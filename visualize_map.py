@@ -1,4 +1,4 @@
-import pygame, math, requests
+import pygame, math, requests, heapq, os
 from helper_functions.load_sprite import load_gif_frames
 
 # -----------------------------
@@ -9,6 +9,7 @@ BASE_LAT = 53.1670
 BASE_LON = 8.65222
 SCREEN_TITLE = "Intelligent Route Planner (Llama)"
 GPS_SERVER_URL = "http://127.0.0.1:8000/get"
+HEADLESS = os.environ.get("LLAMA_HEADLESS") == "1"
 scene = "campus"
 
 checkpoint_images = {}
@@ -17,25 +18,28 @@ checkpoint_images = {}
 def load_checkpoint_images():
     import os
     folder = "img/checkpoints"
+    if not os.path.isdir(folder):
+        return
     for fname in os.listdir(folder):
-        if fname.lower().endswith(('.png', '.jpg', '.jpeg')):
-            key = fname.split('.')[0]  # H1.jpg -> H1
+        if fname.lower().endswith((".png", ".jpg", ".jpeg")):
+            key = fname.split(".")[0]  # H1.jpg -> H1
             checkpoint_images[key] = pygame.image.load(os.path.join(folder, fname))
 
 
-pygame.init()
-load_checkpoint_images()
+if not HEADLESS:
+    pygame.init()
+    load_checkpoint_images()
 
-clock = pygame.time.Clock()
-map_img = pygame.image.load("img/map.JPG")
-W, H = map_img.get_width(), map_img.get_height()
-screen = pygame.display.set_mode((W - 30, H - 20))
-pygame.display.set_caption(SCREEN_TITLE)
-frames = load_gif_frames("img/llama (2).gif", 50)
+    clock = pygame.time.Clock()
+    map_img = pygame.image.load("img/map.JPG")
+    W, H = map_img.get_width(), map_img.get_height()
+    screen = pygame.display.set_mode((W - 30, H - 20))
+    pygame.display.set_caption(SCREEN_TITLE)
+    frames = load_gif_frames("img/llama (2).gif", 50)
 
-screen_w, screen_h = screen.get_size()
-center_x = screen_w // 2
-center_y = screen_h // 2
+    screen_w, screen_h = screen.get_size()
+    center_x = screen_w // 2
+    center_y = screen_h // 2
 
 checkpoint_popup = None
 checkpoint_timer = 0
@@ -174,23 +178,94 @@ graph_edges = {
 
 selected_room = None
 
+# -----------------------------
+# Advanced Heuristic (ALT: A* with Landmarks)
+# -----------------------------
+# Toggle at runtime with the 'H' key (Euclid vs ALT)
+USE_ALT = False
+ALT_LANDMARKS = [
+    "H_L1",  # far left
+    "H_R2",  # right intersection
+    "VL5",   # bottom-left vertical
+    "VR6",   # bottom-right vertical
+]
 
-def heuristic(a, b):
+# Precomputed single-source shortest path distances from each landmark
+alt_dists = {}
+
+# Last run stats for display
+last_astar_expansions = 0
+last_heuristic_mode = "Euclid"
+
+
+def euclid(a, b):
     return math.dist(a, b)
 
 
+def dijkstra_from(source):
+    # Single-source shortest paths on the RLH graph with Euclidean edge weights
+    dist = {node: float("inf") for node in graph_nodes}
+    dist[source] = 0.0
+    pq = [(0.0, source)]
+    while pq:
+        d, u = heapq.heappop(pq)
+        if d != dist[u]:
+            continue
+        for v in graph_edges[u]:
+            w = math.dist(graph_nodes[u], graph_nodes[v])
+            nd = d + w
+            if nd < dist[v]:
+                dist[v] = nd
+                heapq.heappush(pq, (nd, v))
+    return dist
+
+
+def build_alt():
+    """Precompute distances from landmarks for ALT heuristic.
+    Safe to call multiple times (rebuilds table)."""
+    global alt_dists
+    alt_dists = {}
+    for L in ALT_LANDMARKS:
+        if L in graph_nodes:
+            alt_dists[L] = dijkstra_from(L)
+
+
+def heuristic(u_node, goal_node):
+    """Heuristic between nodes u and goal.
+    If USE_ALT, uses ALT lower bound: max_L |d(L,goal)-d(L,u)|.
+    Falls back to Euclidean if ALT data missing."""
+    global last_heuristic_mode
+    if USE_ALT and alt_dists:
+        best = 0.0
+        for L, dmap in alt_dists.items():
+            dv = dmap.get(goal_node, float("inf"))
+            du = dmap.get(u_node, float("inf"))
+            if dv != float("inf") and du != float("inf"):
+                val = abs(dv - du)
+                if val > best:
+                    best = val
+        if best > 0:
+            last_heuristic_mode = "ALT"
+            return best
+    last_heuristic_mode = "Euclid"
+    return euclid(graph_nodes[u_node], graph_nodes[goal_node])
+
+
 def a_star(start, goal):
+    global last_astar_expansions
     open_set = {start}
     came_from = {}
 
     g = {node: float("inf") for node in graph_nodes}
     f = {node: float("inf") for node in graph_nodes}
 
-    g[start] = 0
-    f[start] = heuristic(graph_nodes[start], graph_nodes[goal])
+    g[start] = 0.0
+    f[start] = heuristic(start, goal)
 
+    last_astar_expansions = 0
     while open_set:
         current = min(open_set, key=lambda x: f[x])
+        last_astar_expansions += 1
 
         if current == goal:
             # reconstruct path
@@ -208,10 +283,13 @@ def a_star(start, goal):
             if tentative_g < g[neighbor]:
                 came_from[neighbor] = current
                 g[neighbor] = tentative_g
-                f[neighbor] = tentative_g + heuristic(graph_nodes[neighbor], graph_nodes[goal])
+                f[neighbor] = tentative_g + heuristic(neighbor, goal)
                 open_set.add(neighbor)
 
     return None
+
+# Precompute ALT tables once after functions are defined
+build_alt()
 
 
 # -----------------------------
@@ -424,14 +502,18 @@ last_path = []  # <- store the most recent A* path for RLH
 bingo_moving = False
 bingo_path = []
 bingo_index = 0
-bingo_pos = [center_x, center_y]  # x, y
+# Center defaults if screen not available (headless)
+default_cx = 400
+default_cy = 300
+bingo_pos = [locals().get('center_x', default_cx), locals().get('center_y', default_cy)]  # x, y
 bingo_speed = 3  # pixels per frame (tune this)
 
 # -----------------------------
 # Main Loop
 # -----------------------------
-running = True
-while running:
+if not HEADLESS:
+    running = True
+while not HEADLESS and running:
     clock.tick(24)
     time_wave += 2
     e = pygame.event.poll()
@@ -441,6 +523,13 @@ while running:
             print("[SCENE] Returned to campus map.")
         else:
             running = False
+
+    # Global hotkeys (apply in any scene)
+    if e.type == pygame.KEYDOWN:
+        if e.key == pygame.K_h:
+            USE_ALT = not USE_ALT
+            mode = "ALT" if USE_ALT else "Euclid"
+            print(f"[HEURISTIC] Switched to {mode}")
 
     # -----------------------------
     # Campus Scene
@@ -598,6 +687,14 @@ while running:
         screen.blit(frames[frame_idx % len(frames)], (bingo_x - 20, bingo_y - 20))
         set_cursor("grab" if (dragging_map or path_editor) else "arrow")
 
+        # HUD: heuristic mode
+        hud_font = pygame.font.Font(None, 24)
+        hud_text = hud_font.render(f"Heuristic: {last_heuristic_mode}  (press H to toggle)", True, (255, 255, 255))
+        hud_bg = pygame.Surface((hud_text.get_width() + 12, hud_text.get_height() + 8), pygame.SRCALPHA)
+        pygame.draw.rect(hud_bg, (0, 0, 0, 140), hud_bg.get_rect(), border_radius=6)
+        screen.blit(hud_bg, (12, 12))
+        screen.blit(hud_text, (18, 16))
+
     # -----------------------------
     # RLH Floor Plan Scene (Fit-to-Screen + Fixed Bingo)
     # -----------------------------
@@ -637,6 +734,7 @@ while running:
                     start_node = "H1"
                     goal_node = room_name
                     path_nodes = a_star(start_node, goal_node)
+                    print("[A*] mode=", last_heuristic_mode, "expansions=", last_astar_expansions)
                     print("[A* path]", path_nodes)
 
                     # store once, draw every frame
@@ -717,7 +815,23 @@ while running:
         screen.blit(font.render("← BACK TO CAMPUS (ESC)", True, (0, 0, 0)), (20, 20))
         screen.blit(font.render(f"RLH Scale Fit: {scale_floor:.2f}", True, (80, 80, 80)), (20, 45))
 
+        # HUD: heuristic + last stats
+        hud_font = pygame.font.Font(None, 24)
+        line1 = f"Heuristic: {last_heuristic_mode}  (H to toggle)"
+        line2 = f"Last A*: {last_astar_expansions} expansions" if last_astar_expansions else ""
+        l1 = hud_font.render(line1, True, (0, 0, 0))
+        l2 = hud_font.render(line2, True, (0, 0, 0)) if line2 else None
+        pad_w = max(l1.get_width(), (l2.get_width() if l2 else 0)) + 20
+        pad_h = l1.get_height() + (l2.get_height() if l2 else 0) + 16
+        panel = pygame.Surface((pad_w, pad_h), pygame.SRCALPHA)
+        pygame.draw.rect(panel, (255, 255, 255, 200), panel.get_rect(), border_radius=8)
+        screen.blit(panel, (win_w - pad_w - 20, 20))
+        screen.blit(l1, (win_w - pad_w - 20 + 10, 20 + 8))
+        if l2:
+            screen.blit(l2, (win_w - pad_w - 20 + 10, 20 + 8 + l1.get_height()))
+
     pygame.display.flip()
     frame_idx += 1
 
-pygame.quit()
+if not HEADLESS:
+    pygame.quit()
