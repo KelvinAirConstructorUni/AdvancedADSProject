@@ -138,14 +138,6 @@ Then check:
 http://127.0.0.1:8000/get
 ```
 
-Helper: coordinate picker
-
-```
-python helper_functions\map.py
-```
-
-This opens the campus map and prints pixel coordinates where you click. Useful when adding new nodes/rooms.
-
 Troubleshooting
 
 - Geolocation doesn’t update on phone page
