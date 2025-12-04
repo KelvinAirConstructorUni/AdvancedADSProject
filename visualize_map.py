@@ -17,6 +17,7 @@ checkpoint_images = {}
 
 def load_checkpoint_images():
     import os
+
     folder = "img/checkpoints"
     if not os.path.isdir(folder):
         return
@@ -51,10 +52,23 @@ checkpoint_duration = 60  # frames (2.5 seconds at 24fps)
 
 # RLH outline polygon (from path editor)
 RLH_POLYGON = [
-    (198, 138), (196, 161), (190, 179), (190, 202), (208, 207),
-    (210, 190), (224, 193), (229, 181), (253, 185), (251, 209),
-    (270, 215), (279, 150), (260, 147), (256, 168),
-    (215, 163), (216, 141), (200, 138)
+    (198, 138),
+    (196, 161),
+    (190, 179),
+    (190, 202),
+    (208, 207),
+    (210, 190),
+    (224, 193),
+    (229, 181),
+    (253, 185),
+    (251, 209),
+    (270, 215),
+    (279, 150),
+    (260, 147),
+    (256, 168),
+    (215, 163),
+    (216, 141),
+    (200, 138),
 ]
 
 # -----------------------------
@@ -113,14 +127,12 @@ graph_nodes = {
     "H1": (436, 356),  # 👈 central node near Bingo (start)
     "H_R1": (575, 352),
     "H_R2": (642, 354),  # also used as intersection with right vertical
-
     # ---- left vertical hallway (top → bottom, x ≈ 65) ----
     "VL1": (65, 116),
     "VL2": (68, 260),
     "VL3": (66, 415),
     "VL4": (69, 523),
     "VL5": (65, 640),
-
     # ---- right vertical hallway (top → bottom, x ≈ 643) ----
     "VR1": (643, 177),
     "VR2": (644, 215),
@@ -128,7 +140,6 @@ graph_nodes = {
     "VR4": (642, 473),
     "VR5": (643, 563),
     "VR6": (643, 616),
-
     # ---- rooms (destinations) ----
     "CNL Hall": rooms["CNL Hall"]["pos"][0],
     "Room 134": rooms["Room 134"]["pos"][0],
@@ -154,14 +165,12 @@ graph_edges = {
     "H1": ["H_L3", "H_R1"],  # 👈 Bingo's hallway node
     "H_R1": ["H1", "H_R2"],
     "H_R2": ["H_R1", "VR3", "VR4"],  # intersection with right vertical
-
     # left vertical hallway
     "VL1": ["VL2"],
     "VL2": ["VL1", "VL3"],
     "VL3": ["VL2", "VL4", "H_L1"],  # connect to horizontal
     "VL4": ["VL3", "VL5"],
     "VL5": ["VL4"],
-
     # right vertical hallway
     "VR1": ["VR2", "CNL Hall"],  # top, near CNL
     "VR2": ["VR1", "VR3"],
@@ -169,7 +178,6 @@ graph_edges = {
     "VR4": ["H_R2", "VR5"],
     "VR5": ["VR4", "VR6", "Room 135"],
     "VR6": ["VR5", "Room 134"],
-
     # rooms back to hallway
     "CNL Hall": ["VR1"],
     "Room 134": ["VR6"],
@@ -186,8 +194,8 @@ USE_ALT = False
 ALT_LANDMARKS = [
     "H_L1",  # far left
     "H_R2",  # right intersection
-    "VL5",   # bottom-left vertical
-    "VR6",   # bottom-right vertical
+    "VL5",  # bottom-left vertical
+    "VR6",  # bottom-right vertical
 ]
 
 # Precomputed single-source shortest path distances from each landmark
@@ -279,7 +287,9 @@ def a_star(start, goal):
         open_set.remove(current)
 
         for neighbor in graph_edges[current]:
-            tentative_g = g[current] + math.dist(graph_nodes[current], graph_nodes[neighbor])
+            tentative_g = g[current] + math.dist(
+                graph_nodes[current], graph_nodes[neighbor]
+            )
             if tentative_g < g[neighbor]:
                 came_from[neighbor] = current
                 g[neighbor] = tentative_g
@@ -287,6 +297,7 @@ def a_star(start, goal):
                 open_set.add(neighbor)
 
     return None
+
 
 # Precompute ALT tables once after functions are defined
 build_alt()
@@ -380,8 +391,15 @@ def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
         glow_radius = int(radius + 8 + pulse * 6)
         glow_alpha = int(80 + pulse * 100)
 
-        glow_surface = pygame.Surface((screen.get_width(), screen.get_height()), pygame.SRCALPHA)
-        pygame.draw.circle(glow_surface, (color[0], color[1], color[2], glow_alpha), (x, y), glow_radius)
+        glow_surface = pygame.Surface(
+            (screen.get_width(), screen.get_height()), pygame.SRCALPHA
+        )
+        pygame.draw.circle(
+            glow_surface,
+            (color[0], color[1], color[2], glow_alpha),
+            (x, y),
+            glow_radius,
+        )
         screen.blit(glow_surface, (0, 0))
 
         # -----------------------------
@@ -398,8 +416,12 @@ def set_room_node(coordinates, label="", color=(255, 80, 80), radius=10):
             outline_surf = font.render(label, True, (0, 0, 0))
 
             # Outline
-            screen.blit(outline_surf, (x - outline_surf.get_width() // 2 + 1, y - 25 + 1))
-            screen.blit(outline_surf, (x - outline_surf.get_width() // 2 - 1, y - 25 - 1))
+            screen.blit(
+                outline_surf, (x - outline_surf.get_width() // 2 + 1, y - 25 + 1)
+            )
+            screen.blit(
+                outline_surf, (x - outline_surf.get_width() // 2 - 1, y - 25 - 1)
+            )
 
             # Text
             screen.blit(text_surf, (x - text_surf.get_width() // 2, y - 25))
@@ -465,15 +487,31 @@ def draw_radar(screen, center, t):
 routes = {
     "RLH": {
         "front": [
-            (615, 505), (444, 481), (434, 524), (395, 528),
-            (221, 503), (200, 485), (213, 390), (233, 238),
-            (241, 237), (244, 213), (246, 197), (231, 189)
+            (615, 505),
+            (444, 481),
+            (434, 524),
+            (395, 528),
+            (221, 503),
+            (200, 485),
+            (213, 390),
+            (233, 238),
+            (241, 237),
+            (244, 213),
+            (246, 197),
+            (231, 189),
         ],
         "back": [
-            (614, 505), (455, 485), (442, 481), (455, 382),
-            (467, 310), (471, 268), (398, 257), (410, 150),
-            (291, 133), (282, 188)
-        ]
+            (614, 505),
+            (455, 485),
+            (442, 481),
+            (455, 382),
+            (467, 310),
+            (471, 268),
+            (398, 257),
+            (410, 150),
+            (291, 133),
+            (282, 188),
+        ],
     }
 }
 
@@ -505,7 +543,10 @@ bingo_index = 0
 # Center defaults if screen not available (headless)
 default_cx = 400
 default_cy = 300
-bingo_pos = [locals().get('center_x', default_cx), locals().get('center_y', default_cy)]  # x, y
+bingo_pos = [
+    locals().get("center_x", default_cx),
+    locals().get("center_y", default_cy),
+]  # x, y
 bingo_speed = 3  # pixels per frame (tune this)
 
 # -----------------------------
@@ -585,7 +626,9 @@ while not HEADLESS and running:
             map_x, map_y = mx - manual_offset[0], my - manual_offset[1]
             if e.button == 1:
                 path_points.append((map_x, map_y))
-                print(f"[NODE] Added MAP ({int(map_x)}, {int(map_y)}) [screen=({mx},{my}) offset={manual_offset}]")
+                print(
+                    f"[NODE] Added MAP ({int(map_x)}, {int(map_y)}) [screen=({mx},{my}) offset={manual_offset}]"
+                )
             elif e.button == 3 and path_points:
                 removed = path_points.pop()
                 print(f"[NODE] Removed {removed}")
@@ -654,7 +697,9 @@ while not HEADLESS and running:
 
             # Filled transparent glow
             poly_surface = pygame.Surface(screen.get_size(), pygame.SRCALPHA)
-            pygame.draw.polygon(poly_surface, (*glow_color, int(90 * proximity_factor)), scaled_poly)
+            pygame.draw.polygon(
+                poly_surface, (*glow_color, int(90 * proximity_factor)), scaled_poly
+            )
             screen.blit(poly_surface, (0, 0))
 
             # Outline border
@@ -679,8 +724,13 @@ while not HEADLESS and running:
                 pygame.draw.circle(screen, (0, 255, 0), (sx, sy), 6)
                 if i > 0:
                     px, py = path_points[i - 1]
-                    pygame.draw.line(screen, (255, 255, 0),
-                                     (int(px + offset_x), int(py + offset_y)), (sx, sy), 2)
+                    pygame.draw.line(
+                        screen,
+                        (255, 255, 0),
+                        (int(px + offset_x), int(py + offset_y)),
+                        (sx, sy),
+                        2,
+                    )
 
         # Bingo + radar
         draw_radar(screen, (int(bingo_x), int(bingo_y)), time_wave)
@@ -689,8 +739,14 @@ while not HEADLESS and running:
 
         # HUD: heuristic mode
         hud_font = pygame.font.Font(None, 24)
-        hud_text = hud_font.render(f"Heuristic: {last_heuristic_mode}  (press H to toggle)", True, (255, 255, 255))
-        hud_bg = pygame.Surface((hud_text.get_width() + 12, hud_text.get_height() + 8), pygame.SRCALPHA)
+        hud_text = hud_font.render(
+            f"Heuristic: {last_heuristic_mode}  (press H to toggle)",
+            True,
+            (255, 255, 255),
+        )
+        hud_bg = pygame.Surface(
+            (hud_text.get_width() + 12, hud_text.get_height() + 8), pygame.SRCALPHA
+        )
         pygame.draw.rect(hud_bg, (0, 0, 0, 140), hud_bg.get_rect(), border_radius=6)
         screen.blit(hud_bg, (12, 12))
         screen.blit(hud_text, (18, 16))
@@ -734,7 +790,12 @@ while not HEADLESS and running:
                     start_node = "H1"
                     goal_node = room_name
                     path_nodes = a_star(start_node, goal_node)
-                    print("[A*] mode=", last_heuristic_mode, "expansions=", last_astar_expansions)
+                    print(
+                        "[A*] mode=",
+                        last_heuristic_mode,
+                        "expansions=",
+                        last_astar_expansions,
+                    )
                     print("[A* path]", path_nodes)
 
                     # store once, draw every frame
@@ -763,11 +824,11 @@ while not HEADLESS and running:
 
             rx, ry = data["pos"][0]
             if room_name == selected_room:
-                set_room_node((rx, ry), label=room_name,
-                              color=(255, 230, 50), radius=10)
+                set_room_node(
+                    (rx, ry), label=room_name, color=(255, 230, 50), radius=10
+                )
             else:
-                set_room_node((rx, ry), label=room_name,
-                              color=(0, 200, 130), radius=7)
+                set_room_node((rx, ry), label=room_name, color=(0, 200, 130), radius=7)
 
         # 5) draw the A* path using stored last_path
         if last_path:
@@ -813,12 +874,19 @@ while not HEADLESS and running:
         # 7) UI
         font = pygame.font.SysFont("PressStart2P", 12)
         screen.blit(font.render("← BACK TO CAMPUS (ESC)", True, (0, 0, 0)), (20, 20))
-        screen.blit(font.render(f"RLH Scale Fit: {scale_floor:.2f}", True, (80, 80, 80)), (20, 45))
+        screen.blit(
+            font.render(f"RLH Scale Fit: {scale_floor:.2f}", True, (80, 80, 80)),
+            (20, 45),
+        )
 
         # HUD: heuristic + last stats
         hud_font = pygame.font.Font(None, 24)
         line1 = f"Heuristic: {last_heuristic_mode}  (H to toggle)"
-        line2 = f"Last A*: {last_astar_expansions} expansions" if last_astar_expansions else ""
+        line2 = (
+            f"Last A*: {last_astar_expansions} expansions"
+            if last_astar_expansions
+            else ""
+        )
         l1 = hud_font.render(line1, True, (0, 0, 0))
         l2 = hud_font.render(line2, True, (0, 0, 0)) if line2 else None
         pad_w = max(l1.get_width(), (l2.get_width() if l2 else 0)) + 20

@@ -6,25 +6,25 @@
 <h3>📡 GPS Tracker Active</h3>
 <p id="coords">Waiting for GPS...</p>
 <script>
-const SERVER_URL = "http://172.16.122.135:8000/update";  // replace with your Mac's IP!
+    const SERVER_URL = "http://172.16.122.135:8000/update";  // replace with your Mac's IP!
 
-function sendGPS(lat, lon) {
-  fetch(SERVER_URL, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ lat, lon })
-  }).catch(err => console.log("⚠️ send failed:", err));
-}
+    function sendGPS(lat, lon) {
+      fetch(SERVER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ lat, lon })
+      }).catch(err => console.log("⚠️ send failed:", err));
+    }
 
-navigator.geolocation.watchPosition(pos => {
-  const lat = pos.coords.latitude;
-  const lon = pos.coords.longitude;
-  document.getElementById("coords").textContent =
-      `lat=${lat.toFixed(6)}, lon=${lon.toFixed(6)}`;
-  sendGPS(lat, lon);
-}, err => {
-  document.getElementById("coords").textContent = "GPS error: " + err.message;
-});
+    navigator.geolocation.watchPosition(pos => {
+      const lat = pos.coords.latitude;
+      const lon = pos.coords.longitude;
+      document.getElementById("coords").textContent =
+          `lat=${lat.toFixed(6)}, lon=${lon.toFixed(6)}`;
+      sendGPS(lat, lon);
+    }, err => {
+      document.getElementById("coords").textContent = "GPS error: " + err.message;
+    });
 </script>
 </body>
 </html>

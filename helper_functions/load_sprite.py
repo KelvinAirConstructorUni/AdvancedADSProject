@@ -2,6 +2,7 @@
 import pygame
 from PIL import Image
 
+
 def load_gif_frames(file_path, cell_size):
     """
     Loads a GIF and returns a list of Pygame surfaces scaled to cell_size.
